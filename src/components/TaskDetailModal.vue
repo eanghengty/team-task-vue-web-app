@@ -78,7 +78,7 @@
           </div>
 
           <!-- Action buttons -->
-          <div v-if="task.confirmed !== false" class="flex gap-2">
+          <div v-if="task.confirmed !== false && canEdit" class="flex gap-2">
             <button class="btn-primary text-sm flex-1"
               @click="$emit('toggle-done', task.id); closeModal()">
               {{ task.done ? 'Reopen' : 'Mark Done' }}

@@ -16,7 +16,9 @@
           style="border-color:var(--border);background:var(--surface)"
           @click="$emit('open-detail', task)">
           <td class="p-3">
-            <div class="checkbox-custom" :class="{ checked: task.done }" @click.stop="$emit('toggle-done', task.id)">
+            <div class="checkbox-custom" :class="{ checked: task.done }"
+              :style="!canAct(task) ? 'opacity:0.4;cursor:not-allowed' : ''"
+              @click.stop="canAct(task) && $emit('toggle-done', task.id)">
               <svg v-if="task.done" width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </div>
           </td>
@@ -65,9 +67,10 @@
 import { isOverdue, priorityDotColor, dotToBadgeStyle } from '../utils.js'
 
 const props = defineProps({
-  tasks:   Array,
-  members: Array,
-  columns: Array,
+  tasks:       Array,
+  members:     Array,
+  columns:     Array,
+  currentUser: Object,
 })
 defineEmits(['open-detail', 'toggle-done', 'delete-task'])
 
@@ -75,4 +78,6 @@ const memberById  = (id)  => props.members.find(m => m.id === id)
 const colByStatus = (key) => props.columns?.find(c => c.status === key)
 const statusLabel = (key) => colByStatus(key)?.label ?? key
 const statusStyle = (key) => dotToBadgeStyle(colByStatus(key)?.dot ?? '#888888')
+const canAct      = (task) =>
+  props.currentUser?.access === 'admin' || task.assigneeId === props.currentUser?.id
 </script>

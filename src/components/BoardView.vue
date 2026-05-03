@@ -19,6 +19,7 @@
           :task="task"
           :member="memberById(task.assigneeId)"
           :has-reminder="hasActiveReminder(task.id)"
+          :can-drag="canDrag(task)"
           @dragstart="$emit('update:dragTaskId', $event)"
           @dragend="$emit('update:dragOver', null)"
           @click="$emit('open-detail', $event)"
@@ -38,11 +39,14 @@ const props = defineProps({
   filteredTasks: Array,
   members: Array,
   reminders: Array,
+  currentUser: Object,
   dragOver: String,
 })
 defineEmits(['update:dragOver', 'update:dragTaskId', 'drop', 'open-detail', 'toggle-done'])
 
-const tasksByStatus  = (status) => props.filteredTasks.filter(t => t.status === status)
-const memberById     = (id) => props.members.find(m => m.id === id)
+const tasksByStatus     = (status) => props.filteredTasks.filter(t => t.status === status)
+const memberById        = (id) => props.members.find(m => m.id === id)
 const hasActiveReminder = (id) => props.reminders.some(r => r.taskId === id && !r.fired)
+const canDrag           = (task) =>
+  props.currentUser?.access === 'admin' || task.assigneeId === props.currentUser?.id
 </script>

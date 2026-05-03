@@ -43,8 +43,8 @@
           <div v-if="!n.read" class="w-2 h-2 rounded-full flex-shrink-0 mt-1.5" style="background:var(--accent)"></div>
         </div>
 
-        <!-- accept / decline for pending assignment requests -->
-        <div v-if="n.type === 'task_assignment_request'" class="flex gap-2">
+        <!-- accept / decline for assignment and reopen requests -->
+        <div v-if="n.type === 'task_assignment_request' || n.type === 'task_reopen_request'" class="flex gap-2">
           <button class="btn-primary text-xs px-3 py-1.5 flex-1" @click.stop="$emit('accept', n)">
             <span class="material-icons" style="font-size:13px;vertical-align:-2px;margin-right:3px">check</span>Accept
           </button>
@@ -76,14 +76,28 @@ function iconName(type) {
     task_assignment_request:'assignment_late',
     task_confirmed:         'check_circle',
     task_declined:          'cancel',
+    task_commented:         'chat_bubble',
+    task_status_changed:    'swap_horiz',
+    task_reopen_request:    'refresh',
+    task_reopen_accepted:   'check_circle',
+    task_reopen_declined:   'cancel',
+    task_marked_done:       'task_alt',
+    task_reopened:          'replay',
   }
   return map[type] ?? 'info'
 }
 
 function iconColor(type) {
   if (type === 'task_assignment_request') return 'var(--accent)'
+  if (type === 'task_reopen_request')     return 'var(--accent)'
   if (type === 'task_confirmed')          return '#47ffd4'
+  if (type === 'task_reopen_accepted')    return '#47ffd4'
   if (type === 'task_declined')           return 'var(--accent2)'
+  if (type === 'task_reopen_declined')    return 'var(--accent2)'
+  if (type === 'task_commented')          return '#aaaaaa'
+  if (type === 'task_status_changed')     return 'var(--accent3)'
+  if (type === 'task_marked_done')        return 'var(--accent3)'
+  if (type === 'task_reopened')           return 'var(--accent3)'
   return 'var(--accent3)'
 }
 

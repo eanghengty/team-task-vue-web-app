@@ -38,6 +38,18 @@
     <!-- Scrollable body -->
     <div class="flex-1 overflow-y-auto">
 
+      <!-- ── APPEARANCE (all users) ─────────────────────────────── -->
+      <div class="px-6 py-4 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid var(--border)">
+        <div>
+          <div class="text-sm font-medium">Appearance</div>
+          <div class="text-xs mt-0.5" style="color:var(--muted)">{{ isDark ? 'Dark mode' : 'Light mode' }}</div>
+        </div>
+        <button class="btn-ghost flex items-center gap-2 text-xs px-3 py-1.5" @click="$emit('toggle-theme')">
+          <span class="material-icons" style="font-size:16px">{{ isDark ? 'light_mode' : 'dark_mode' }}</span>
+          {{ isDark ? 'Light Mode' : 'Dark Mode' }}
+        </button>
+      </div>
+
       <!-- ── USER: Change Password only ─────────────────────────── -->
       <div v-if="currentUser.access === 'user'" class="p-6 flex flex-col gap-4">
         <div>
@@ -299,9 +311,10 @@ const props = defineProps({
   tasks:        Array,
   memberColors: Array,
   currentUser:  Object,
+  isDark:       Boolean,
 })
 
-const emit = defineEmits(['close', 'open-add-member', 'update-member', 'delete-member', 'update-status', 'add-status', 'delete-status'])
+const emit = defineEmits(['close', 'open-add-member', 'update-member', 'delete-member', 'update-status', 'add-status', 'delete-status', 'toggle-theme'])
 
 const activeTab        = ref('members')
 const editingId        = ref(null)
@@ -402,7 +415,7 @@ function saveStatusEdit(status) {
   padding: 14px 16px;
   transition: border-color 0.15s;
 }
-.member-row:hover { border-color: #3a3a3a; }
+.member-row:hover { border-color: var(--muted); }
 
 .icon-btn {
   display: flex;

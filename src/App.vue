@@ -39,6 +39,7 @@
           :filtered-tasks="filteredTasks"
           :members="members"
           :reminders="reminders"
+          :current-user="currentUser"
           :drag-over="dragOver"
           v-model:dragOver="dragOver"
           v-model:dragTaskId="dragTaskId"
@@ -50,6 +51,7 @@
           :tasks="filteredTasks"
           :members="members"
           :columns="columns"
+          :current-user="currentUser"
           @open-detail="openDetail"
           @toggle-done="toggleDone"
           @delete-task="deleteTask"
@@ -110,10 +112,12 @@
       :tasks="tasks"
       :member-colors="memberColors"
       :current-user="currentUser"
+      :is-dark="isDark"
       @close="showSettings = false"
       @open-add-member="openModal('member')"
       @update-member="updateMember"
       @delete-member="deleteMember"
+      @toggle-theme="toggleTheme"
       @update-status="updateColumn"
       @add-status="addStatus"
       @delete-status="deleteStatus"
@@ -123,8 +127,8 @@
       :notifications="notifications"
       @close="showNotifications = false"
       @mark-all-read="markAllNotificationsRead"
-      @accept="acceptAssignment"
-      @decline="declineAssignment"
+      @accept="n => n.type === 'task_reopen_request' ? acceptReopenRequest(n) : acceptAssignment(n)"
+      @decline="n => n.type === 'task_reopen_request' ? declineReopenRequest(n) : declineAssignment(n)"
     />
   </template>
 </template>
@@ -198,6 +202,7 @@ const detailTask        = ref(null)
 const loading           = ref(true)
 const showSettings      = ref(false)
 const showNotifications = ref(false)
+const isDark            = ref(localStorage.getItem('squad_theme') !== 'light')
 
 const members       = ref([])
 const tasks         = ref([])
@@ -301,6 +306,11 @@ async function fetchAll() {
   await fetchNotifications()
 }
 
+async function fetchTasks() {
+  const { data } = await supabase.from('tasks').select('*').order('created_at')
+  if (data) tasks.value = data.map(mapTask)
+}
+
 async function fetchNotifications() {
   if (!currentUser.value) return
   const { data } = await supabase
@@ -312,8 +322,77 @@ async function fetchNotifications() {
   if (data) notifications.value = data.map(mapNotification)
 }
 
+async function notifyAdmins(type, message, taskId) {
+  const adminIds = members.value
+    .filter(m => m.access === 'admin' && m.id !== currentUser.value.id)
+    .map(m => m.id)
+  if (!adminIds.length) return
+  await supabase.from('notifications').insert(
+    adminIds.map(id => ({
+      member_id: id,
+      sender_id: currentUser.value.id,
+      type,
+      message,
+      task_id: taskId ?? null,
+    }))
+  )
+}
+
 // ── app lifecycle ─────────────────────────────────────────────────────────────
-let clockInterval, reminderInterval
+let clockInterval, reminderInterval, taskChannel, notifChannel
+
+function startRealtimeSync() {
+  taskChannel = supabase
+    .channel('db-tasks')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'tasks' }, ({ new: row }) => {
+      if (!tasks.value.find(t => t.id === row.id)) tasks.value.push(mapTask(row))
+    })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'tasks' }, ({ new: row }) => {
+      const idx = tasks.value.findIndex(t => t.id === row.id)
+      if (idx !== -1) {
+        tasks.value[idx] = mapTask(row)
+        if (detailTask.value?.id === row.id) detailTask.value = mapTask(row)
+      }
+    })
+    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'tasks' }, ({ old: row }) => {
+      tasks.value = tasks.value.filter(t => t.id !== row.id)
+    })
+    .subscribe((status, err) => {
+      if (err) console.error('[tasks channel]', err)
+      else console.log('[tasks channel]', status)
+    })
+
+  notifChannel = supabase
+    .channel('db-notifications')
+    .on('postgres_changes', {
+      event: 'INSERT', schema: 'public', table: 'notifications',
+      filter: `member_id=eq.${currentUser.value.id}`,
+    }, ({ new: row }) => {
+      if (!notifications.value.find(n => n.id === row.id)) {
+        notifications.value.unshift(mapNotification(row))
+        if (notifications.value.length > 50) notifications.value = notifications.value.slice(0, 50)
+      }
+    })
+    .on('postgres_changes', {
+      event: 'UPDATE', schema: 'public', table: 'notifications',
+      filter: `member_id=eq.${currentUser.value.id}`,
+    }, ({ new: row }) => {
+      const idx = notifications.value.findIndex(n => n.id === row.id)
+      if (idx !== -1) notifications.value[idx] = mapNotification(row)
+    })
+    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'notifications' }, ({ old: row }) => {
+      if (row.id) notifications.value = notifications.value.filter(n => n.id !== row.id)
+    })
+    .subscribe((status, err) => {
+      if (err) console.error('[notifications channel]', err)
+      else console.log('[notifications channel]', status)
+    })
+}
+
+function stopRealtimeSync() {
+  if (taskChannel) { supabase.removeChannel(taskChannel); taskChannel = null }
+  if (notifChannel) { supabase.removeChannel(notifChannel); notifChannel = null }
+}
 
 function startApp() {
   clockInterval = setInterval(() => {
@@ -322,6 +401,7 @@ function startApp() {
   clock.value = new Date().toLocaleTimeString('en-US', { hour12: false })
 
   fetchAll().then(() => {
+    startRealtimeSync()
     reminderInterval = setInterval(async () => {
       const now = new Date()
       for (const r of reminders.value) {
@@ -331,7 +411,6 @@ function startApp() {
           await supabase.from('reminders').update({ fired: true }).eq('id', r.id)
         }
       }
-      await fetchNotifications()
     }, 15000)
   })
 }
@@ -341,9 +420,21 @@ function stopApp() {
   clearInterval(reminderInterval)
   clockInterval = null
   reminderInterval = null
+  stopRealtimeSync()
+}
+
+function applyTheme(dark) {
+  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light')
+}
+
+function toggleTheme() {
+  isDark.value = !isDark.value
+  applyTheme(isDark.value)
+  localStorage.setItem('squad_theme', isDark.value ? 'dark' : 'light')
 }
 
 onMounted(() => {
+  applyTheme(isDark.value)
   clock.value = new Date().toLocaleTimeString('en-US', { hour12: false })
   const saved = localStorage.getItem('squad_user')
   if (saved) {
@@ -431,6 +522,15 @@ async function addTask() {
 
   logActivity('task_created', 'task', task.id, `${currentUser.value.name} created task: "${task.title}"`)
 
+  if (currentUser.value.access !== 'admin' && task.assigneeId) {
+    const assigneeName = members.value.find(m => m.id === task.assigneeId)?.name ?? 'someone'
+    await notifyAdmins(
+      'task_assigned',
+      `${currentUser.value.name} assigned a task to ${assigneeName}: "${task.title}"`,
+      task.id,
+    )
+  }
+
   modals.add = false
   Object.assign(form, { title: '', desc: '', assigneeId: '', priority: 'medium', due: '', status: columns.value[0]?.status ?? '', reminderDt: '' })
 }
@@ -438,6 +538,10 @@ async function addTask() {
 async function editTask({ id, title, desc, priority, due, status }) {
   const t = tasks.value.find(t => t.id === id)
   if (!t) return
+  if (currentUser.value.access !== 'admin' && t.assigneeId !== currentUser.value.id) {
+    showToast('Permission Denied', 'You can only edit tasks assigned to you', 'red')
+    return
+  }
   Object.assign(t, { title, desc, priority, due, status })
   if (detailTask.value?.id === id) detailTask.value = { ...t }
   const { error } = await supabase.from('tasks').update({
@@ -454,13 +558,38 @@ async function editTask({ id, title, desc, priority, due, status }) {
   }
 }
 
-function onCommentAdded({ taskId, taskTitle }) {
+async function onCommentAdded({ taskId, taskTitle }) {
   logActivity('task_commented', 'task', taskId, `${currentUser.value.name} commented on: "${taskTitle}"`)
+  if (currentUser.value.access !== 'admin') {
+    await notifyAdmins('task_commented', `${currentUser.value.name} commented on: "${taskTitle}"`, taskId)
+  }
 }
 
 async function toggleDone(id) {
   const t = tasks.value.find(t => t.id === id)
   if (!t) return
+
+  const isAdmin   = currentUser.value.access === 'admin'
+  const isOwnTask = t.assigneeId === currentUser.value.id
+
+  if (!isAdmin && !isOwnTask) {
+    if (!t.done) {
+      showToast('Permission Denied', 'You can only mark your own tasks as done', 'red')
+      return
+    }
+    // User requesting to reopen another user's task → send approval request
+    const assignee = members.value.find(m => m.id === t.assigneeId)
+    await supabase.from('notifications').insert({
+      member_id: t.assigneeId,
+      sender_id: currentUser.value.id,
+      type:      'task_reopen_request',
+      message:   `${currentUser.value.name} wants to reopen your task: "${t.title}"`,
+      task_id:   t.id,
+    })
+    showToast('Request Sent', `Reopen request sent to ${assignee?.name ?? 'assignee'}`, 'yellow')
+    return
+  }
+
   const doneKey   = columns.value.at(-1)?.status ?? 'done'
   const firstKey  = columns.value[0]?.status ?? 'todo'
   const newDone   = !t.done
@@ -473,8 +602,21 @@ async function toggleDone(id) {
     .update({ done: newDone, status: newStatus })
     .eq('id', id)
   if (error) showToast('Error', 'Could not update task', 'red')
-  else logActivity('task_status_changed', 'task', id,
-    `${currentUser.value.name} marked "${t.title}" as ${newDone ? 'done' : 'reopened'}`)
+  else {
+    logActivity('task_status_changed', 'task', id,
+      `${currentUser.value.name} marked "${t.title}" as ${newDone ? 'done' : 'reopened'}`)
+    // Admin acting on someone else's task → notify the assignee
+    if (isAdmin && t.assigneeId && t.assigneeId !== currentUser.value.id) {
+      const action = newDone ? 'marked your task as done' : 'reopened your task'
+      await supabase.from('notifications').insert({
+        member_id: t.assigneeId,
+        sender_id: currentUser.value.id,
+        type:      newDone ? 'task_marked_done' : 'task_reopened',
+        message:   `${currentUser.value.name} ${action}: "${t.title}"`,
+        task_id:   t.id,
+      })
+    }
+  }
 }
 
 async function deleteTask(id) {
@@ -598,6 +740,12 @@ async function onDrop(status) {
   if (!dragTaskId.value) return
   const t = tasks.value.find(t => t.id === dragTaskId.value)
   if (!t) return
+  if (currentUser.value.access !== 'admin' && t.assigneeId !== currentUser.value.id) {
+    showToast('Permission Denied', 'You can only move tasks assigned to you', 'red')
+    dragTaskId.value = null
+    dragOver.value   = null
+    return
+  }
   const isDone = status === columns.value.at(-1)?.status
   t.status = status
   t.done   = isDone
@@ -608,8 +756,18 @@ async function onDrop(status) {
     .update({ status, done: isDone })
     .eq('id', t.id)
   if (error) showToast('Error', 'Could not move task', 'red')
-  else logActivity('task_status_changed', 'task', t.id,
-    `${currentUser.value.name} moved "${t.title}" to ${status}`)
+  else {
+    const colLabel = columns.value.find(c => c.status === status)?.label ?? status
+    logActivity('task_status_changed', 'task', t.id,
+      `${currentUser.value.name} moved "${t.title}" to ${colLabel}`)
+    if (currentUser.value.access !== 'admin') {
+      await notifyAdmins(
+        'task_status_changed',
+        `${currentUser.value.name} moved "${t.title}" to ${colLabel}`,
+        t.id,
+      )
+    }
+  }
 }
 
 // ── notifications actions ─────────────────────────────────────────────────────
@@ -641,7 +799,6 @@ async function acceptAssignment(notif) {
   showToast('Task Accepted', t?.title ?? '', 'yellow')
   logActivity('task_confirmed', 'task', notif.taskId,
     `${currentUser.value.name} accepted task assignment: "${t?.title ?? ''}"`)
-  await fetchNotifications()
 }
 
 async function declineAssignment(notif) {
@@ -665,7 +822,48 @@ async function declineAssignment(notif) {
   showToast('Task Declined', t?.title ?? '', 'red')
   logActivity('task_declined', 'task', notif.taskId ?? 'unknown',
     `${currentUser.value.name} declined task assignment: "${t?.title ?? ''}"`)
-  await fetchNotifications()
+}
+
+async function acceptReopenRequest(notif) {
+  const t = tasks.value.find(t => t.id === notif.taskId)
+  if (t) {
+    const firstKey = columns.value[0]?.status ?? 'todo'
+    const doneKey  = columns.value.at(-1)?.status ?? 'done'
+    t.done   = false
+    t.status = t.status === doneKey ? firstKey : t.status
+    await supabase.from('tasks').update({ done: false, status: t.status }).eq('id', t.id)
+    if (detailTask.value?.id === t.id) detailTask.value = { ...t }
+  }
+  notifications.value = notifications.value.filter(n => n.id !== notif.id)
+  await supabase.from('notifications').delete().eq('id', notif.id)
+  if (notif.senderId) {
+    await supabase.from('notifications').insert({
+      member_id: notif.senderId,
+      sender_id: currentUser.value.id,
+      type:      'task_reopen_accepted',
+      message:   `${currentUser.value.name} accepted your reopen request for: "${t?.title ?? ''}"`,
+      task_id:   notif.taskId,
+    })
+  }
+  showToast('Reopen Accepted', t?.title ?? '', 'yellow')
+  logActivity('task_status_changed', 'task', notif.taskId,
+    `${currentUser.value.name} accepted reopen request for: "${t?.title ?? ''}"`)
+}
+
+async function declineReopenRequest(notif) {
+  const t = tasks.value.find(t => t.id === notif.taskId)
+  notifications.value = notifications.value.filter(n => n.id !== notif.id)
+  await supabase.from('notifications').delete().eq('id', notif.id)
+  if (notif.senderId) {
+    await supabase.from('notifications').insert({
+      member_id: notif.senderId,
+      sender_id: currentUser.value.id,
+      type:      'task_reopen_declined',
+      message:   `${currentUser.value.name} declined your reopen request for: "${t?.title ?? ''}"`,
+      task_id:   notif.taskId,
+    })
+  }
+  showToast('Reopen Declined', t?.title ?? '', 'red')
 }
 
 // ── toast ─────────────────────────────────────────────────────────────────────

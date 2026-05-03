@@ -2,6 +2,50 @@
 
 All notable changes to SQUAD — Team Task Board.
 
+## [3.6.0] — 2026-05-03
+
+### Added
+- **Light / dark theme toggle** — `[data-theme="light"]` block in `style.css` overrides all CSS variables with warm off-white surfaces and a readable olive-lime accent (`#9db800`). `applyTheme(dark)` sets the attribute on `<html>`; `toggleTheme()` flips `isDark`, applies the theme, and persists the choice to `localStorage` as `squad_theme`. Preference is restored immediately in `onMounted` before first render.
+- **Appearance section in SettingsSidebar** — shown to both admin and user at the top of the scrollable body. Displays current theme name and a toggle button with a `light_mode` / `dark_mode` Material icon. Emits `toggle-theme` to `App.vue`.
+- **Permission enforcement at action level** — `editTask`, `onDrop`, and `toggleDone` in `App.vue` now guard with `if (currentUser.access !== 'admin' && task.assigneeId !== currentUser.id)` before any state mutation. Non-owner non-admin calls return early with a red toast. UI-level gates (disabled checkboxes, hidden buttons, non-draggable cards) remain as the first line of defence.
+- **Drag permission on cards** — `BoardView` receives `currentUser` prop and computes `canDrag(task)`; passes `:can-drag` Boolean to each `TaskCard`. `TaskCard` uses `:draggable="canDrag"`; its checkbox also blocks click and dims (`opacity: 0.4`, `cursor: not-allowed`) when `canDrag` is false.
+- **ListView permission** — `ListView` receives `currentUser` prop; `canAct(task)` helper gates the done checkbox the same way as `TaskCard`.
+- **Mark Done gated by `canEdit`** — "Mark Done / Reopen" button in `TaskDetailModal` is now inside `v-if="task.confirmed !== false && canEdit"` so non-owners can no longer toggle done from the detail modal.
+- **Reopen approval flow** — when a `user` role tries to reopen a task assigned to someone else, `toggleDone` sends a `task_reopen_request` notification to the assignee (with Accept / Decline buttons in `NotificationPanel`) instead of blocking outright. Admin reopens bypass the flow.
+  - Assignee accepts → task set to `done = false`, moved to first column if previously in done column; `task_reopen_accepted` notification sent to requester.
+  - Assignee declines → no state change; `task_reopen_declined` notification sent to requester.
+- **Admin mark-done/reopen notifications** — when an admin toggles done on a task assigned to someone else, the assignee receives a `task_marked_done` or `task_reopened` notification instantly.
+- **Admin activity notifications via `notifyAdmins()`** — helper bulk-inserts a notification for every admin (except the current user) when a `user` role performs: task comment (`task_commented`), task assignment to someone (`task_assigned`), or status change via drag (`task_status_changed`).
+- **Supabase Realtime sync** — polling replaced with two persistent WebSocket channels opened by `startRealtimeSync()` after `fetchAll()`:
+  - `db-tasks` — subscribes to all INSERT / UPDATE / DELETE on `tasks`; patches `tasks[]` in-place (no full array replacement). Open `detailTask` is also patched live on UPDATE.
+  - `db-notifications` — subscribes to `notifications` filtered server-side to `member_id = currentUser.id`; new notifications are prepended instantly, capped at 50.
+  - `stopRealtimeSync()` removes both channels on logout / unmount.
+- **Realtime status logging** — `.subscribe()` callbacks log `[tasks channel] SUBSCRIBED` / `[notifications channel] SUBSCRIBED` (or errors) to the browser console for debugging.
+- New notification types added to `NotificationPanel` icon/colour maps: `task_commented`, `task_status_changed`, `task_reopen_request`, `task_reopen_accepted`, `task_reopen_declined`, `task_marked_done`, `task_reopened`.
+- `acceptReopenRequest(notif)` and `declineReopenRequest(notif)` actions added to `App.vue`.
+- `App.vue` `@accept` / `@decline` event handlers on `NotificationPanel` now route by `notif.type` — `task_reopen_request` goes to the reopen handlers; everything else goes to the assignment handlers.
+- `isDark` ref added to `App.vue` state (persisted as `squad_theme` in `localStorage`).
+
+### Changed
+- `startApp()` — no longer starts a notification/task poll; calls `startRealtimeSync()` after `fetchAll()` instead.
+- `stopApp()` — calls `stopRealtimeSync()`.
+- `logout()` — calls `stopRealtimeSync()` via `stopApp()`.
+- Reminder interval — ticks every 15 s for reminder checks only; `fetchTasks()` and `fetchNotifications()` removed from the interval body.
+- All manual `await fetchNotifications()` calls removed from action handlers (`acceptAssignment`, `declineAssignment`, `acceptReopenRequest`, `declineReopenRequest`, `toggleDone`) — realtime delivers those events automatically.
+- `onDrop` — now uses column label (not raw key) in activity log and admin notification messages.
+- `onCommentAdded` — made `async`; calls `notifyAdmins` when actor is a user role.
+- `SettingsSidebar` — accepts `isDark` Boolean prop; emits `toggle-theme`; `.member-row:hover` border now uses `var(--muted)` instead of a hardcoded dark hex.
+- `style.css` `.task-card:hover` border — uses `var(--muted)` instead of hardcoded `#3a3a3a` so it adapts to both themes.
+
+### Prerequisite
+- Run once in Supabase SQL editor to enable Realtime on the required tables:
+  ```sql
+  ALTER PUBLICATION supabase_realtime ADD TABLE tasks;
+  ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
+  ```
+
+---
+
 ## [3.5.0] — 2026-05-03
 
 ### Added

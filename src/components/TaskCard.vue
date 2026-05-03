@@ -1,13 +1,14 @@
 <template>
   <div class="task-card"
     :class="['priority-' + task.priority, { done: task.done }]"
-    draggable="true"
+    :draggable="canDrag"
     @dragstart="$emit('dragstart', task.id)"
     @dragend="$emit('dragend')"
     @click="$emit('click', task)">
     <div class="flex items-start gap-2 mb-2">
       <div class="checkbox-custom mt-0.5" :class="{ checked: task.done }"
-        @click.stop="$emit('toggle-done', task.id)">
+        :style="!canDrag ? 'opacity:0.4;cursor:not-allowed' : ''"
+        @click.stop="canDrag && $emit('toggle-done', task.id)">
         <svg v-if="task.done" width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </div>
       <div class="flex-1 min-w-0">
@@ -48,6 +49,7 @@ const props = defineProps({
   task:        Object,
   member:      Object,
   hasReminder: Boolean,
+  canDrag:     { type: Boolean, default: true },
 })
 defineEmits(['dragstart', 'dragend', 'click', 'toggle-done'])
 
