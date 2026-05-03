@@ -64,6 +64,7 @@ src/
 
 ### Key behaviours
 
+- **Tab views** use `v-if` — each view is fully destroyed and remounted on tab switch. Do **not** add entry animations (e.g. `fade-up`) to per-item elements inside these views; they will re-fire on every tab switch and cause a flicker. Reserve `fade-up` for genuinely new items added at runtime.
 - **Drag-and-drop** — native HTML5 drag events on `.task-card` / `.column`. `dragTaskId` ref tracks the in-flight card; `dragOver` ref drives the `.drag-over` highlight class. Events bubble up from `TaskCard` → `BoardView` → `App.vue`.
 - **Reminder checker** — `setInterval` every 15 s fires toasts for any reminder whose `datetime ≤ now` and `fired === false`, then marks `fired = true`.
 - **Toasts** — managed as a `toasts` ref array. Each toast auto-removes after a configurable duration via `fading` flag + CSS `slideOut` animation.

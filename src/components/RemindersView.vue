@@ -8,7 +8,7 @@
       <div class="font-mono text-sm" style="color:var(--muted)">no reminders set</div>
     </div>
     <div v-else class="flex flex-col gap-3">
-      <div v-for="r in reminders" :key="r.id" class="reminder-item fade-up" :class="{ 'opacity-50': r.fired }">
+      <div v-for="r in reminders" :key="r.id" class="reminder-item" :class="{ 'opacity-50': r.fired }">
         <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center"
           :style="{ background: r.fired ? 'var(--surface)' : 'rgba(232,255,71,0.12)', border: '1px solid ' + (r.fired ? 'var(--border)' : 'rgba(232,255,71,0.3)') }">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" :stroke="r.fired ? 'var(--muted)' : 'var(--accent)'" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>

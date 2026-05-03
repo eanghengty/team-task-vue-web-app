@@ -141,14 +141,15 @@ body::before {
   }
 
   .tab-btn {
-    @apply px-4 py-2 text-[13px] font-medium rounded-md cursor-pointer border-0 bg-transparent transition-all;
+    @apply px-4 py-2 text-[13px] font-medium rounded-md cursor-pointer bg-transparent transition-all;
     color: var(--muted);
     font-family: 'Space Grotesk', sans-serif;
+    border: 1px solid transparent;
   }
   .tab-btn.active {
     background: var(--surface2);
     color: var(--text);
-    border: 1px solid var(--border);
+    border-color: var(--border);
   }
 
   .checkbox-custom {

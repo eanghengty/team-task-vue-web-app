@@ -2,6 +2,14 @@
 
 All notable changes to SQUAD — Team Task Board.
 
+## [2.3.0] — 2026-05-03
+
+### Fixed
+- **Tab switching flicker** — inactive `.tab-btn` now carries `border: 1px solid transparent` so toggling the active state never adds/removes a pixel and causes a layout reflow.
+- **Card re-animation on tab switch** — removed `fade-up` class from `TaskCard.vue` and `RemindersView.vue` list items. Because views are mounted with `v-if`, every tab switch was destroying and remounting components, causing all cards to re-run the slide-up animation and appear to flicker.
+
+---
+
 ## [2.2.0] — 2026-05-03
 
 ### Changed

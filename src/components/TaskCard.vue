@@ -1,5 +1,5 @@
 <template>
-  <div class="task-card fade-up"
+  <div class="task-card"
     :class="['priority-' + task.priority, { done: task.done }]"
     draggable="true"
     @dragstart="$emit('dragstart', task.id)"
