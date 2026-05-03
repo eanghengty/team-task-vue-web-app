@@ -138,6 +138,7 @@ The app uses a simple custom auth layer — **no Supabase Auth**. Credentials ar
 | `updateMember({ id, … })` | Update member fields; syncs `currentUser` if self-update |
 | `deleteMember(id)` | Delete member; logs activity |
 | `updateColumn / addStatus / deleteStatus` | Manage `task_statuses` rows |
+| `reorderColumn(status, direction)` | Reorder kanban columns: swaps positions and renumbers all `sort_order` values sequentially (0, 1, 2...); direction is 'up' or 'down'; shows success toast on completion |
 | `onDrop(status)` | Kanban drag-and-drop; guarded — non-admin non-assignee blocked; logs activity; notifies admins if actor is user role |
 | `markAllNotificationsRead()` | Marks all unread notifications as read in DB and local ref |
 | `acceptAssignment(notif)` | Sets `task.confirmed = true`; deletes request notification; sends `task_confirmed` to sender |
@@ -231,7 +232,8 @@ The app uses a simple custom auth layer — **no Supabase Auth**. Credentials ar
 - **Appearance section** — shown to all users at the top of the scrollable body. Displays current theme name and a toggle button (`light_mode` / `dark_mode` icon). Emits `toggle-theme`.
 - **Admin view:** Members tab + Task Statuses tab (below Appearance section).
 - **User view:** Change Password form (below Appearance section).
-- Emits: `close`, `open-add-member`, `update-member`, `delete-member`, `update-status`, `add-status`, `delete-status`, `toggle-theme`.
+- **Task Statuses tab:** Each status row has up/down arrow buttons for reordering. Buttons are disabled (dimmed) for the first and last columns. Emits `reorder-status` with the status key and direction ('up' or 'down').
+- Emits: `close`, `open-add-member`, `update-member`, `delete-member`, `update-status`, `add-status`, `delete-status`, `reorder-status`, `toggle-theme`.
 
 ### BoardView
 

@@ -280,6 +280,24 @@
               </div>
               <span class="badge badge-gray text-xs flex-shrink-0">{{ taskCountByStatus[col.status] ?? 0 }} tasks</span>
               <div class="flex items-center gap-1 flex-shrink-0">
+                <button
+                  class="icon-btn"
+                  title="Move up"
+                  :style="{ opacity: columns.indexOf(col) === 0 ? 0.3 : 1, cursor: columns.indexOf(col) === 0 ? 'not-allowed' : 'pointer' }"
+                  :disabled="columns.indexOf(col) === 0"
+                  @click="$emit('reorder-status', col.status, 'up')"
+                >
+                  <span class="material-icons" style="font-size:16px">arrow_upward</span>
+                </button>
+                <button
+                  class="icon-btn"
+                  title="Move down"
+                  :style="{ opacity: columns.indexOf(col) === columns.length - 1 ? 0.3 : 1, cursor: columns.indexOf(col) === columns.length - 1 ? 'not-allowed' : 'pointer' }"
+                  :disabled="columns.indexOf(col) === columns.length - 1"
+                  @click="$emit('reorder-status', col.status, 'down')"
+                >
+                  <span class="material-icons" style="font-size:16px">arrow_downward</span>
+                </button>
                 <button class="icon-btn" title="Edit" @click="startStatusEdit(col)">
                   <span class="material-icons" style="font-size:16px">edit</span>
                 </button>
@@ -314,7 +332,7 @@ const props = defineProps({
   isDark:       Boolean,
 })
 
-const emit = defineEmits(['close', 'open-add-member', 'update-member', 'delete-member', 'update-status', 'add-status', 'delete-status', 'toggle-theme'])
+const emit = defineEmits(['close', 'open-add-member', 'update-member', 'delete-member', 'update-status', 'add-status', 'delete-status', 'reorder-status', 'toggle-theme'])
 
 const activeTab        = ref('members')
 const editingId        = ref(null)

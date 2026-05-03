@@ -2,6 +2,19 @@
 
 All notable changes to SQUAD — Team Task Board.
 
+## [3.7.0] — 2026-05-03
+
+### Added
+- **Column reordering in Task Statuses tab** — admins can now reorder kanban columns via up/down arrow buttons. Buttons are disabled (dimmed) for the first and last columns to prevent invalid moves. Reordering updates the `sort_order` field in the `task_statuses` table and immediately reflects on the board.
+- `reorderColumn(status, direction)` action in `App.vue` — swaps column positions and renumbers all `sort_order` values sequentially to avoid database constraint violations. Shows a success toast on completion.
+- Up/down arrow buttons in `SettingsSidebar` Task Statuses tab for each status row. Uses Material Icons `arrow_upward` and `arrow_downward`.
+- `@reorder-status` event listener on `SettingsSidebar` component in App.vue.
+
+### Changed
+- `SettingsSidebar` emits `reorder-status` with status key and direction (up/down).
+
+---
+
 ## [3.6.0] — 2026-05-03
 
 ### Added

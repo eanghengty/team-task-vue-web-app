@@ -5,7 +5,9 @@
       "Bash(npm run *)",
       "Bash(npm list *)",
       "Bash(supabase --version)",
-      "Bash(npx supabase *)"
+      "Bash(npx supabase *)",
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "mcp__Claude_in_Chrome__switch_browser"
     ]
   }
 }

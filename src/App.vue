@@ -121,6 +121,7 @@
       @update-status="updateColumn"
       @add-status="addStatus"
       @delete-status="deleteStatus"
+      @reorder-status="reorderColumn"
     />
     <NotificationPanel
       :open="showNotifications"
@@ -734,6 +735,25 @@ async function deleteStatus(status) {
   const { error } = await supabase.from('task_statuses').delete().eq('key', status)
   if (error) showToast('Error', 'Could not delete status', 'red')
   else showToast('Status Removed', status, 'yellow')
+}
+
+async function reorderColumn(status, direction) {
+  const idx = columns.value.findIndex(c => c.status === status)
+  if (idx === -1) return
+  const targetIdx = direction === 'up' ? idx - 1 : idx + 1
+  if (targetIdx < 0 || targetIdx >= columns.value.length) return
+
+  [columns.value[idx], columns.value[targetIdx]] = [columns.value[targetIdx], columns.value[idx]]
+
+  for (let i = 0; i < columns.value.length; i++) {
+    const { error } = await supabase.from('task_statuses').update({ sort_order: i }).eq('key', columns.value[i].status)
+    if (error) {
+      showToast('Error', 'Could not reorder statuses', 'red')
+      return
+    }
+    columns.value[i].sortOrder = i
+  }
+  showToast('Reordered', `${columns.value[targetIdx].label} moved`, 'yellow')
 }
 
 async function onDrop(status) {
