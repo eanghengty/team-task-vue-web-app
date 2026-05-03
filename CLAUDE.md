@@ -14,9 +14,30 @@ There are no tests or lint scripts configured.
 
 ## Architecture
 
-Single-page Vue 3 app (Composition API + `<script setup>`). All application logic lives in one file — **`src/App.vue`** — intentionally kept as a single component rather than split into sub-components.
+Single-page Vue 3 app (Composition API + `<script setup>`). State and business logic live in **`src/App.vue`**; the UI is split across focused components in **`src/components/`**.
 
-### State model
+### File structure
+
+```
+src/
+├── utils.js                    — pure helpers: uid, statusLabel, statusBadgeClass, priorityDotColor, isOverdue
+├── App.vue                     — state, actions, lifecycle; composes all components
+└── components/
+    ├── AppHeader.vue           — sticky header, clock, New Task / Reminders buttons
+    ├── ToastContainer.vue      — toast notification list
+    ├── StatsBar.vue            — total / open / overdue stats cards + members chip
+    ├── TabBar.vue              — board / list / reminders tabs + member & priority filters
+    ├── BoardView.vue           — kanban columns, drag-and-drop orchestration
+    ├── TaskCard.vue            — individual kanban card (draggable)
+    ├── ListView.vue            — sortable table view of tasks
+    ├── RemindersView.vue       — reminders tab list
+    ├── AddTaskModal.vue        — new task form modal
+    ├── AddReminderModal.vue    — new reminder form modal
+    ├── TaskDetailModal.vue     — task detail / mark done / delete modal
+    └── AddMemberModal.vue      — add member form modal
+```
+
+### State model (all refs live in `App.vue`)
 
 | Ref | Shape | Purpose |
 |-----|-------|---------|
@@ -28,6 +49,12 @@ Single-page Vue 3 app (Composition API + `<script setup>`). All application logi
 
 `status` is the source of truth for which Kanban column a task belongs to (`todo | progress | review | done`). `done` is a boolean mirror that is set `true` when status becomes `'done'` and cleared otherwise.
 
+### Component contract
+
+- **Props down, events up.** `App.vue` passes state as props; components emit named events (`open-modal`, `toggle-done`, `delete-task`, etc.) back to `App.vue`.
+- Modal form objects (`form`, `remForm`, `memberForm`) are reactive objects passed by reference — child components bind `v-model` directly against them.
+- Pure helper functions (`isOverdue`, `priorityDotColor`, etc.) are imported from `src/utils.js` in any component that needs them — never duplicated.
+
 ### Styling
 
 - **Tailwind 3** utility classes + custom CSS in `src/style.css` via `@layer components`.
@@ -36,17 +63,18 @@ Single-page Vue 3 app (Composition API + `<script setup>`). All application logi
 
 ### Key behaviours
 
-- **Drag-and-drop** — native HTML5 drag events on `.task-card` / `.column`. `dragTaskId` ref tracks the in-flight card; `dragOver` ref drives the `.drag-over` highlight class.
+- **Drag-and-drop** — native HTML5 drag events on `.task-card` / `.column`. `dragTaskId` ref tracks the in-flight card; `dragOver` ref drives the `.drag-over` highlight class. Events bubble up from `TaskCard` → `BoardView` → `App.vue`.
 - **Reminder checker** — `setInterval` every 15 s fires toasts for any reminder whose `datetime ≤ now` and `fired === false`, then marks `fired = true`.
 - **Toasts** — managed as a `toasts` ref array. Each toast auto-removes after a configurable duration via `fading` flag + CSS `slideOut` animation.
-- **Filters** (`filterMember`, `filterPriority`) are top-level refs; `filteredTasks` is a computed that both the board columns and list view derive from.
+- **Filters** (`filterMember`, `filterPriority`) are top-level refs in `App.vue`; `filteredTasks` is a computed that `BoardView` and `ListView` both receive as a prop.
 
 ### Data flow
 
 ```
-user action → mutate tasks/reminders/members refs
-           → computed filteredTasks updates automatically
-           → template re-renders (board columns, list, stats)
+user action (component event)
+  → App.vue handler mutates tasks / reminders / members refs
+  → computed filteredTasks updates automatically
+  → props re-render BoardView / ListView / StatsBar
 ```
 
 No Vuex/Pinia; no router; no external API calls. All state is in-memory and resets on page reload.

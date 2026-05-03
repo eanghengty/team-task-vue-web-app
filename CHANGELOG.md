@@ -2,6 +2,33 @@
 
 All notable changes to SQUAD — Team Task Board.
 
+## [2.1.0] — 2026-05-03
+
+### Changed
+- **Split monolithic `src/App.vue` into 12 focused components** under `src/components/`.
+- Extracted pure helper functions (`uid`, `statusLabel`, `statusBadgeClass`, `priorityDotColor`, `isOverdue`) into `src/utils.js`; imported where needed instead of being duplicated.
+- `App.vue` is now a lean orchestrator (~130 lines) responsible only for state, actions, and lifecycle hooks.
+- Component contract: props flow down from `App.vue`; components emit named events (`open-modal`, `toggle-done`, `delete-task`, `drop`, etc.) back up.
+- `StatsBar` now computes its own derived stats (`openCount`, `overdueCount`, `progressPct`) from the `tasks` prop.
+- `TabBar` exposes `v-model:currentTab`, `v-model:filterMember`, `v-model:filterPriority` for two-way binding.
+- `BoardView` delegates card rendering to `TaskCard` and proxies drag events up to `App.vue`.
+
+### Added
+- `src/components/AppHeader.vue` — sticky header with clock and action buttons.
+- `src/components/ToastContainer.vue` — toast list with dismiss emit.
+- `src/components/StatsBar.vue` — stats cards and members chip.
+- `src/components/TabBar.vue` — tab switcher and filter selects.
+- `src/components/BoardView.vue` — kanban column layout and drag-and-drop.
+- `src/components/TaskCard.vue` — draggable task card.
+- `src/components/ListView.vue` — table view of tasks.
+- `src/components/RemindersView.vue` — reminders tab.
+- `src/components/AddTaskModal.vue` — new task form.
+- `src/components/AddReminderModal.vue` — new reminder form.
+- `src/components/TaskDetailModal.vue` — task detail and actions.
+- `src/components/AddMemberModal.vue` — add member form.
+
+---
+
 ## [2.0.0] — 2026-05-03
 
 ### Changed
