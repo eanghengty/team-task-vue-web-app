@@ -1,5 +1,5 @@
 <template>
-  <AppHeader :clock="clock" @open-modal="openModal" />
+  <AppHeader :clock="clock" @open-modal="openModal" @open-settings="showSettings = true" />
   <ToastContainer :toasts="toasts" @remove="removeToast" />
   <StatsBar :tasks="tasks" :members="members" @open-modal="openModal" />
   <TabBar
@@ -75,6 +75,18 @@
     @close="modals.member = false"
     @submit="addMember"
   />
+  <SettingsSidebar
+    :open="showSettings"
+    :members="members"
+    :columns="columns"
+    :tasks="tasks"
+    :member-colors="memberColors"
+    @close="showSettings = false"
+    @open-add-member="openModal('member')"
+    @update-member="updateMember"
+    @delete-member="deleteMember"
+    @update-status="updateColumn"
+  />
 </template>
 
 <script setup>
@@ -92,6 +104,7 @@ import AddTaskModal     from './components/AddTaskModal.vue'
 import AddReminderModal from './components/AddReminderModal.vue'
 import TaskDetailModal  from './components/TaskDetailModal.vue'
 import AddMemberModal   from './components/AddMemberModal.vue'
+import SettingsSidebar  from './components/SettingsSidebar.vue'
 
 // ── state ─────────────────────────────────────────────────────────────────────
 const clock          = ref('--:--:--')
@@ -102,6 +115,7 @@ const dragTaskId     = ref(null)
 const dragOver       = ref(null)
 const detailTask     = ref(null)
 const loading        = ref(true)
+const showSettings   = ref(false)
 
 const members   = ref([])
 const tasks     = ref([])
@@ -142,7 +156,7 @@ function mapReminder(row) {
 }
 
 function mapMember(row) {
-  return { id: row.id, name: row.name, role: row.role, color: row.color }
+  return { id: row.id, name: row.name, role: row.role, color: row.color, access: row.access ?? 'user' }
 }
 
 // ── computed ──────────────────────────────────────────────────────────────────
@@ -153,12 +167,12 @@ const filteredTasks = computed(() => tasks.value.filter(t =>
 
 const pendingReminders = computed(() => reminders.value.filter(r => !r.fired))
 
-const columns = [
+const columns = ref([
   { status: 'todo',     label: 'Todo',       dot: '#666',           badgeClass: 'badge-gray'   },
   { status: 'progress', label: 'In Progress', dot: 'var(--accent)',  badgeClass: 'badge-yellow' },
   { status: 'review',   label: 'Review',      dot: 'var(--accent3)', badgeClass: 'badge-blue'   },
   { status: 'done',     label: 'Done',        dot: '#3a3a3a',        badgeClass: 'badge-gray'   },
-]
+])
 
 // ── data fetching ─────────────────────────────────────────────────────────────
 async function fetchAll() {
@@ -286,6 +300,28 @@ async function addMember() {
   modals.member = false
   showToast('Member Added', `${data.name} joined the team`, 'blue')
   Object.assign(memberForm, { name: '', role: '', color: '#e8ff47' })
+}
+
+async function updateMember({ id, name, role, color, access }) {
+  const m = members.value.find(m => m.id === id)
+  if (!m) return
+  Object.assign(m, { name, role, color, access })
+  const { error } = await supabase.from('members').update({ name, role, color, access }).eq('id', id)
+  if (error) showToast('Error', 'Could not update member', 'red')
+  else showToast('Member Updated', name, 'blue')
+}
+
+async function deleteMember(id) {
+  const m = members.value.find(m => m.id === id)
+  members.value = members.value.filter(m => m.id !== id)
+  const { error } = await supabase.from('members').delete().eq('id', id)
+  if (error) showToast('Error', 'Could not delete member', 'red')
+  else showToast('Member Removed', m?.name ?? '', 'yellow')
+}
+
+function updateColumn({ status, label, dot }) {
+  const col = columns.value.find(c => c.status === status)
+  if (col) { col.label = label; col.dot = dot }
 }
 
 async function onDrop(status) {

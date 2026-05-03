@@ -6,6 +6,7 @@ create table members (
   name       text not null,
   role       text not null default 'Team Member',
   color      text not null default '#e8ff47',
+  access     text not null default 'user' check (access in ('admin', 'user')),
   created_at timestamptz not null default now()
 );
 

@@ -2,6 +2,19 @@
 
 All notable changes to SQUAD — Team Task Board.
 
+## [3.1.0] — 2026-05-03
+
+### Added
+- **Settings sidebar** — right-side sliding panel opened via the Settings button in the header.
+  - **Members tab** — view all members with avatar, job role, and access badge (admin/user). Inline edit name, job role, colour, and access role. Delete members directly from settings.
+  - **Task Statuses tab** — view all kanban statuses with dot colour and task count. Edit labels and dot colours inline.
+  - "+ Add Member" shortcut button inside the sidebar opens the existing Add Member modal.
+- `access` field on members (`admin | user`, default `user`) — persisted in Supabase. DB migration: `supabase/migrations/001_add_member_access.sql`.
+- `updateMember` and `deleteMember` actions in `App.vue`; `updateColumn` mutates the `columns` ref in-memory.
+- `columns` promoted from a plain array to a `ref` so status label/colour edits are reactive.
+
+---
+
 ## [3.0.1] — 2026-05-03
 
 ### Fixed

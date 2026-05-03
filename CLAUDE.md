@@ -10,6 +10,18 @@ npm run build     # production build → dist/
 npm run preview   # preview production build locally
 ```
 
+### Supabase CLI scripts
+
+```bash
+npm run db:login  # authenticate with Supabase account
+npm run db:link   # link to a Supabase project
+npm run db:push   # apply local migrations to the remote DB
+npm run db:pull   # pull remote schema as a new migration
+npm run db:diff   # diff local vs remote schema
+npm run db:reset  # reset and re-run all migrations
+npm run db:types  # generate TypeScript types → src/types/supabase.ts
+```
+
 There are no tests or lint scripts configured.
 
 ## Architecture
@@ -21,9 +33,11 @@ Single-page Vue 3 app (Composition API + `<script setup>`). State and business l
 ```
 src/
 ├── utils.js                    — pure helpers: uid, statusLabel, statusBadgeClass, priorityDotColor, isOverdue
+├── lib/
+│   └── supabase.js             — Supabase client (reads VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY)
 ├── App.vue                     — state, actions, lifecycle; composes all components
 └── components/
-    ├── AppHeader.vue           — sticky header, clock, New Task / Reminders buttons
+    ├── AppHeader.vue           — sticky header, clock, New Task / Reminders / Settings buttons
     ├── ToastContainer.vue      — toast notification list
     ├── StatsBar.vue            — total / open / overdue stats cards + members chip
     ├── TabBar.vue              — board / list / reminders tabs + member & priority filters
@@ -34,7 +48,13 @@ src/
     ├── AddTaskModal.vue        — new task form modal
     ├── AddReminderModal.vue    — new reminder form modal
     ├── TaskDetailModal.vue     — task detail / mark done / delete modal
-    └── AddMemberModal.vue      — add member form modal
+    ├── AddMemberModal.vue      — add member form modal
+    └── SettingsSidebar.vue     — right-side settings panel (members + task statuses)
+
+supabase/
+├── schema.sql                  — full schema for a fresh DB setup
+└── migrations/
+    └── 001_add_member_access.sql  — adds access column (admin|user) to members
 ```
 
 ### State model (all refs live in `App.vue`)
@@ -43,17 +63,43 @@ src/
 |-----|-------|---------|
 | `tasks` | `{ id, title, desc, assigneeId, priority, due, status, done, createdAt }[]` | All tasks |
 | `reminders` | `{ id, title, taskId, datetime, assigneeId, fired }[]` | Standalone + task-linked reminders |
-| `members` | `{ id, name, role, color }[]` | Team members; seeded with 3 defaults |
+| `members` | `{ id, name, role, color, access }[]` | Team members — `access` is `'admin' \| 'user'` |
+| `columns` | `{ status, label, dot, badgeClass }[]` **ref** | Kanban column definitions; label/dot editable in Settings |
 | `modals` | reactive object | `add / reminder / detail / member` boolean flags |
 | `form / remForm / memberForm` | reactive objects | Controlled inputs for each modal |
+| `showSettings` | `boolean` ref | Controls SettingsSidebar open/close |
 
 `status` is the source of truth for which Kanban column a task belongs to (`todo | progress | review | done`). `done` is a boolean mirror that is set `true` when status becomes `'done'` and cleared otherwise.
+
+### Actions in `App.vue`
+
+| Function | Description |
+|---|---|
+| `fetchAll()` | Loads members, tasks, reminders in parallel on mount |
+| `addTask()` | Insert task (+ optional linked reminder) |
+| `toggleDone(id)` | Flip done boolean and sync status |
+| `deleteTask(id)` | Delete task + cascade-remove linked reminders locally |
+| `addReminder()` | Insert standalone reminder |
+| `deleteReminder(id)` | Delete reminder |
+| `addMember()` | Insert new member |
+| `updateMember({ id, name, role, color, access })` | Update all member fields in DB and local ref |
+| `deleteMember(id)` | Delete member from DB and local ref |
+| `updateColumn({ status, label, dot })` | Mutate `columns` ref in-memory (no DB — labels/dots are UI-only) |
+| `onDrop(status)` | Handle kanban drag-and-drop; updates task status in DB |
 
 ### Component contract
 
 - **Props down, events up.** `App.vue` passes state as props; components emit named events (`open-modal`, `toggle-done`, `delete-task`, etc.) back to `App.vue`.
 - Modal form objects (`form`, `remForm`, `memberForm`) are reactive objects passed by reference — child components bind `v-model` directly against them.
 - Pure helper functions (`isOverdue`, `priorityDotColor`, etc.) are imported from `src/utils.js` in any component that needs them — never duplicated.
+
+### SettingsSidebar
+
+- Right-side sliding panel, fixed position, `z-[260]`, `width: 420px`.
+- Two internal tabs: **Members** and **Task Statuses** (controlled by local `activeTab` ref inside the component).
+- Members tab: inline-edit name / role / colour / access; delete member; "+ Add Member" emits `open-add-member` → `App.vue` opens `modals.member`.
+- Task Statuses tab: inline-edit label and dot colour for each column; task count per status computed from the `tasks` prop.
+- Emits: `close`, `open-add-member`, `update-member`, `delete-member`, `update-status`.
 
 ### Styling
 
@@ -66,42 +112,18 @@ src/
 
 - **Tab views** use `v-if` — each view is fully destroyed and remounted on tab switch. Do **not** add entry animations (e.g. `fade-up`) to per-item elements inside these views; they will re-fire on every tab switch and cause a flicker. Reserve `fade-up` for genuinely new items added at runtime.
 - **Drag-and-drop** — native HTML5 drag events on `.task-card` / `.column`. `dragTaskId` ref tracks the in-flight card; `dragOver` ref drives the `.drag-over` highlight class. Events bubble up from `TaskCard` → `BoardView` → `App.vue`.
-- **Reminder checker** — `setInterval` every 15 s fires toasts for any reminder whose `datetime ≤ now` and `fired === false`, then marks `fired = true`.
+- **Reminder checker** — `setInterval` every 15 s fires toasts for any reminder whose `datetime ≤ now` and `fired === false`, then marks `fired = true` in Supabase.
 - **Toasts** — managed as a `toasts` ref array. Each toast auto-removes after a configurable duration via `fading` flag + CSS `slideOut` animation.
 - **Filters** (`filterMember`, `filterPriority`) are top-level refs in `App.vue`; `filteredTasks` is a computed that `BoardView` and `ListView` both receive as a prop.
+- **Optimistic updates** — all actions mutate local refs immediately, then write to Supabase. Errors surface as red toasts; local state is not rolled back (page refresh restores DB truth).
 
 ### Data flow
 
 ```
 user action (component event)
-  → App.vue handler mutates tasks / reminders / members refs
+  → App.vue handler mutates tasks / reminders / members / columns refs
   → computed filteredTasks updates automatically
-  → props re-render BoardView / ListView / StatsBar
+  → props re-render BoardView / ListView / StatsBar / SettingsSidebar
 ```
 
-State is persisted in **Supabase Postgres**. On mount, `fetchAll()` loads all three tables in parallel. Every action (add/update/delete) writes to Supabase; local refs are updated optimistically for instant UI feedback.
-
-### Supabase setup
-
-1. Run `supabase/schema.sql` in your Supabase SQL editor to create the three tables.
-2. Copy `.env.example` → `.env` and fill in `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` from your Supabase project settings. The anon key must be the **`anon public`** JWT (starts with `eyJ`, ~200 chars) — not the `sb_secret_...` format which causes 401 errors.
-3. `.env` is git-ignored — never commit it.
-
-### DB ↔ JS column mapping
-
-Postgres uses snake_case; JS uses camelCase. Three mapper functions in `App.vue` handle the translation:
-
-| Table column | JS field |
-|---|---|
-| `description` | `desc` |
-| `assignee_id` | `assigneeId` |
-| `task_id` | `taskId` |
-| `created_at` | `createdAt` |
-
-### Tables
-
-| Table | Key columns |
-|---|---|
-| `members` | `id uuid`, `name`, `role`, `color` |
-| `tasks` | `id uuid`, `title`, `description`, `assignee_id`, `priority`, `due`, `status`, `done` |
-| `reminders` | `id uuid`, `title`, `task_id`, `datetime`, `assignee_id`, `fired` |
+State is persisted in **Supabase Postgres**. See [SUPABASE.md](./SUPABASE.md) for full database documentation.
