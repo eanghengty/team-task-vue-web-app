@@ -30,6 +30,7 @@
       <ListView v-if="currentTab === 'list'"
         :tasks="filteredTasks"
         :members="members"
+        :columns="columns"
         @open-detail="openDetail"
         @toggle-done="toggleDone"
         @delete-task="deleteTask"
@@ -48,6 +49,7 @@
     :open="modals.add"
     :form="form"
     :members="members"
+    :columns="columns"
     :shaking="shaking"
     @close="modals.add = false"
     @submit="addTask"
@@ -64,6 +66,7 @@
     :open="modals.detail"
     :task="detailTask"
     :members="members"
+    :columns="columns"
     @close="modals.detail = false"
     @toggle-done="toggleDone"
     @delete-task="deleteTask"
@@ -86,12 +89,14 @@
     @update-member="updateMember"
     @delete-member="deleteMember"
     @update-status="updateColumn"
+    @add-status="addStatus"
+    @delete-status="deleteStatus"
   />
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
-import { uid } from './utils.js'
+import { uid, labelToKey } from './utils.js'
 import { supabase } from './lib/supabase.js'
 import AppHeader        from './components/AppHeader.vue'
 import ToastContainer   from './components/ToastContainer.vue'
@@ -125,7 +130,7 @@ const toasts    = ref([])
 const modals     = reactive({ add: false, reminder: false, detail: false, member: false })
 const form       = reactive({ title: '', desc: '', assigneeId: '', priority: 'medium', due: '', status: 'todo', reminderDt: '' })
 const remForm    = reactive({ title: '', taskId: '', datetime: '', assigneeId: 'team' })
-const memberForm = reactive({ name: '', role: '', color: '#e8ff47' })
+const memberForm = reactive({ name: '', role: '', email: '', password: '', access: 'user', color: '#e8ff47' })
 const memberColors = ['#e8ff47', '#ff4747', '#47c5ff', '#b47aff', '#ff9e47', '#47ffd4']
 const shaking    = reactive({ taskTitle: false, taskAssignee: false })
 
@@ -156,7 +161,15 @@ function mapReminder(row) {
 }
 
 function mapMember(row) {
-  return { id: row.id, name: row.name, role: row.role, color: row.color, access: row.access ?? 'user' }
+  return {
+    id:       row.id,
+    name:     row.name,
+    role:     row.role,
+    color:    row.color,
+    access:   row.access ?? 'user',
+    email:    row.email ?? '',
+    password: row.password ?? '',
+  }
 }
 
 // ── computed ──────────────────────────────────────────────────────────────────
@@ -167,27 +180,30 @@ const filteredTasks = computed(() => tasks.value.filter(t =>
 
 const pendingReminders = computed(() => reminders.value.filter(r => !r.fired))
 
-const columns = ref([
-  { status: 'todo',     label: 'Todo',       dot: '#666',           badgeClass: 'badge-gray'   },
-  { status: 'progress', label: 'In Progress', dot: 'var(--accent)',  badgeClass: 'badge-yellow' },
-  { status: 'review',   label: 'Review',      dot: 'var(--accent3)', badgeClass: 'badge-blue'   },
-  { status: 'done',     label: 'Done',        dot: '#3a3a3a',        badgeClass: 'badge-gray'   },
-])
+const columns = ref([])
+
+// ── mappers ───────────────────────────────────────────────────────────────────
+function mapStatus(row) {
+  return { id: row.id, status: row.key, label: row.label, dot: row.dot, sortOrder: row.sort_order }
+}
 
 // ── data fetching ─────────────────────────────────────────────────────────────
 async function fetchAll() {
   loading.value = true
-  const [mRes, tRes, rRes] = await Promise.all([
+  const [mRes, tRes, rRes, sRes] = await Promise.all([
     supabase.from('members').select('*').order('created_at'),
     supabase.from('tasks').select('*').order('created_at'),
     supabase.from('reminders').select('*').order('created_at'),
+    supabase.from('task_statuses').select('*').order('sort_order'),
   ])
-  if (mRes.error || tRes.error || rRes.error) {
+  if (mRes.error || tRes.error || rRes.error || sRes.error) {
     showToast('Load Error', 'Could not fetch data from Supabase', 'red')
   } else {
     members.value   = mRes.data.map(mapMember)
     tasks.value     = tRes.data.map(mapTask)
     reminders.value = rRes.data.map(mapReminder)
+    columns.value   = sRes.data.map(mapStatus)
+    form.status     = columns.value[0]?.status ?? 'todo'
   }
   loading.value = false
 }
@@ -231,15 +247,17 @@ async function addTask() {
   }
 
   modals.add = false
-  Object.assign(form, { title: '', desc: '', assigneeId: '', priority: 'medium', due: '', status: 'todo', reminderDt: '' })
+  Object.assign(form, { title: '', desc: '', assigneeId: '', priority: 'medium', due: '', status: columns.value[0]?.status ?? '', reminderDt: '' })
   showToast('Task Created', task.title, 'yellow')
 }
 
 async function toggleDone(id) {
   const t = tasks.value.find(t => t.id === id)
   if (!t) return
+  const doneKey   = columns.value.at(-1)?.status ?? 'done'
+  const firstKey  = columns.value[0]?.status ?? 'todo'
   const newDone   = !t.done
-  const newStatus = newDone ? 'done' : t.status === 'done' ? 'todo' : t.status
+  const newStatus = newDone ? doneKey : t.status === doneKey ? firstKey : t.status
   t.done   = newDone
   t.status = newStatus
   if (detailTask.value?.id === id) detailTask.value = { ...t }
@@ -288,25 +306,32 @@ async function deleteReminder(id) {
 async function addMember() {
   if (!memberForm.name.trim()) return
 
-  const { data, error } = await supabase.from('members').insert({
-    name:  memberForm.name.trim(),
-    role:  memberForm.role.trim() || 'Team Member',
-    color: memberForm.color,
-  }).select().single()
+  const payload = {
+    name:   memberForm.name.trim(),
+    role:   memberForm.role.trim() || 'Team Member',
+    color:  memberForm.color,
+    access: memberForm.access,
+    email:  memberForm.email.trim() || null,
+    password: memberForm.password || null,
+  }
+
+  const { data, error } = await supabase.from('members').insert(payload).select().single()
 
   if (error) { showToast('Error', 'Could not add member', 'red'); return }
 
   members.value.push(mapMember(data))
   modals.member = false
   showToast('Member Added', `${data.name} joined the team`, 'blue')
-  Object.assign(memberForm, { name: '', role: '', color: '#e8ff47' })
+  Object.assign(memberForm, { name: '', role: '', email: '', password: '', access: 'user', color: '#e8ff47' })
 }
 
-async function updateMember({ id, name, role, color, access }) {
+async function updateMember({ id, name, role, email, password, color, access }) {
   const m = members.value.find(m => m.id === id)
   if (!m) return
-  Object.assign(m, { name, role, color, access })
-  const { error } = await supabase.from('members').update({ name, role, color, access }).eq('id', id)
+  const patch = { name, role, color, access, email: email.trim() || null }
+  if (password) patch.password = password
+  Object.assign(m, patch)
+  const { error } = await supabase.from('members').update(patch).eq('id', id)
   if (error) showToast('Error', 'Could not update member', 'red')
   else showToast('Member Updated', name, 'blue')
 }
@@ -319,9 +344,39 @@ async function deleteMember(id) {
   else showToast('Member Removed', m?.name ?? '', 'yellow')
 }
 
-function updateColumn({ status, label, dot }) {
+async function updateColumn({ status, label, dot }) {
   const col = columns.value.find(c => c.status === status)
-  if (col) { col.label = label; col.dot = dot }
+  if (!col) return
+  col.label = label
+  col.dot   = dot
+  const { error } = await supabase.from('task_statuses').update({ label, dot }).eq('key', status)
+  if (error) showToast('Error', 'Could not update status', 'red')
+}
+
+async function addStatus({ label, dot }) {
+  const key = labelToKey(label)
+  if (!key) return
+  if (columns.value.some(c => c.status === key)) {
+    showToast('Error', `Status key "${key}" already exists`, 'red'); return
+  }
+  const sortOrder = columns.value.length
+  const { data, error } = await supabase.from('task_statuses')
+    .insert({ key, label, dot, sort_order: sortOrder })
+    .select().single()
+  if (error) { showToast('Error', 'Could not add status', 'red'); return }
+  columns.value.push(mapStatus(data))
+  showToast('Status Added', label, 'yellow')
+}
+
+async function deleteStatus(status) {
+  const inUse = tasks.value.some(t => t.status === status)
+  if (inUse) {
+    showToast('Error', 'Cannot delete — tasks exist with this status', 'red'); return
+  }
+  columns.value = columns.value.filter(c => c.status !== status)
+  const { error } = await supabase.from('task_statuses').delete().eq('key', status)
+  if (error) showToast('Error', 'Could not delete status', 'red')
+  else showToast('Status Removed', status, 'yellow')
 }
 
 async function onDrop(status) {

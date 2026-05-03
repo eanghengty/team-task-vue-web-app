@@ -40,7 +40,7 @@
             </div>
           </td>
           <td class="p-3">
-            <span class="badge" :class="statusBadgeClass(task.status)">{{ statusLabel(task.status) }}</span>
+            <span class="badge" :style="statusStyle(task.status)">{{ statusLabel(task.status) }}</span>
           </td>
           <td class="p-3">
             <button @click.stop="$emit('delete-task', task.id)"
@@ -53,13 +53,17 @@
 </template>
 
 <script setup>
-import { isOverdue, priorityDotColor, statusLabel, statusBadgeClass } from '../utils.js'
+import { isOverdue, priorityDotColor, dotToBadgeStyle } from '../utils.js'
 
 const props = defineProps({
-  tasks: Array,
+  tasks:   Array,
   members: Array,
+  columns: Array,
 })
 defineEmits(['open-detail', 'toggle-done', 'delete-task'])
 
-const memberById = (id) => props.members.find(m => m.id === id)
+const memberById  = (id)  => props.members.find(m => m.id === id)
+const colByStatus = (key) => props.columns?.find(c => c.status === key)
+const statusLabel = (key) => colByStatus(key)?.label ?? key
+const statusStyle = (key) => dotToBadgeStyle(colByStatus(key)?.dot ?? '#888888')
 </script>

@@ -22,7 +22,7 @@ VITE_SUPABASE_ANON_KEY=eyJ...   # anon public JWT, ~200 chars
 
 ## CLI workflow (no Supabase website needed)
 
-The Supabase CLI is installed as a dev dependency. Authenticate and link once, then use npm scripts for all DB work.
+The Supabase CLI is installed as a dev dependency (`supabase` package). Authenticate and link once, then use npm scripts for all DB work.
 
 ```bash
 # One-time setup
@@ -52,6 +52,8 @@ Stores team members. Referenced by `tasks.assignee_id`.
 | `role` | `text` | `'Team Member'` | Job title / role label |
 | `color` | `text` | `'#e8ff47'` | Hex colour for avatar |
 | `access` | `text` | `'user'` | `'admin'` or `'user'` — web access level |
+| `email` | `text` | `null` | Login email; unique across all members |
+| `password` | `text` | `null` | Login password — stored plaintext for now, hash before production |
 | `created_at` | `timestamptz` | `now()` | Auto-set on insert |
 
 **Check constraint:** `access in ('admin', 'user')`
@@ -68,13 +70,39 @@ Stores team members. Referenced by `tasks.assignee_id`.
 | `assignee_id` | `uuid` | `null` | FK → `members(id)`, set null on member delete |
 | `priority` | `text` | `'medium'` | `'high'`, `'medium'`, or `'low'` |
 | `due` | `date` | `null` | Optional due date |
-| `status` | `text` | `'todo'` | `'todo'`, `'progress'`, `'review'`, or `'done'` |
-| `done` | `boolean` | `false` | Mirror of `status = 'done'`; kept in sync by app logic |
+| `status` | `text` | `'todo'` | Free-text key matching a `task_statuses.key` value — no check constraint |
+| `done` | `boolean` | `false` | Mirror of task being in the last status column; kept in sync by app logic |
 | `created_at` | `timestamptz` | `now()` | Auto-set on insert |
 
-**Check constraints:**
-- `priority in ('high', 'medium', 'low')`
-- `status in ('todo', 'progress', 'review', 'done')`
+**Check constraint:** `priority in ('high', 'medium', 'low')`
+
+> `status` has **no** check constraint — valid values are whatever keys exist in the `task_statuses` table. This allows statuses to be added and removed from Settings without a DB migration.
+
+---
+
+### `task_statuses`
+
+Drives the kanban columns. Fully managed from the Settings sidebar — no migrations needed to add or remove statuses.
+
+| Column | Type | Default | Notes |
+|---|---|---|---|
+| `id` | `uuid` | `gen_random_uuid()` | Primary key |
+| `key` | `text` | — | Unique slug stored in `tasks.status` (e.g. `in_review`) |
+| `label` | `text` | — | Display name shown in the UI (e.g. `In Review`) |
+| `dot` | `text` | `'#888888'` | Hex colour for the status dot and badge |
+| `sort_order` | `int` | `0` | Column order on the kanban board (ascending) |
+| `created_at` | `timestamptz` | `now()` | Auto-set on insert |
+
+**Default rows (seeded by migration 003):**
+
+| key | label | dot |
+|---|---|---|
+| `todo` | Todo | `#888888` |
+| `progress` | In Progress | `#e8ff47` |
+| `review` | Review | `#47c5ff` |
+| `done` | Done | `#444444` |
+
+> The **last** row by `sort_order` is treated as the "done" state by app logic (`toggleDone`). If you rename or reorder statuses, the last one becomes the done column.
 
 ---
 
@@ -94,12 +122,13 @@ Stores team members. Referenced by `tasks.assignee_id`.
 
 ## Row Level Security
 
-RLS is enabled on all three tables. The current policies are **open dev policies** that allow all operations without authentication:
+RLS is enabled on all four tables. The current policies are **open dev policies** that allow all operations without authentication:
 
 ```sql
-create policy "allow all members"   on members   for all using (true) with check (true);
-create policy "allow all tasks"     on tasks     for all using (true) with check (true);
-create policy "allow all reminders" on reminders for all using (true) with check (true);
+create policy "allow all members"       on members       for all using (true) with check (true);
+create policy "allow all tasks"         on tasks         for all using (true) with check (true);
+create policy "allow all reminders"     on reminders     for all using (true) with check (true);
+create policy "allow all task_statuses" on task_statuses for all using (true) with check (true);
 ```
 
 > Before going to production, replace these with auth-scoped policies (e.g. `auth.uid() = assignee_id`).
@@ -113,12 +142,14 @@ Migrations live in `supabase/migrations/`. They are applied in filename order by
 | File | Description |
 |---|---|
 | `001_add_member_access.sql` | Adds `access text not null default 'user' check (access in ('admin','user'))` to `members` |
+| `002_add_member_credentials.sql` | Adds `email text unique` and `password text` to `members` |
+| `003_dynamic_task_statuses.sql` | Drops `tasks.status` check constraint; creates `task_statuses` table seeded with 4 defaults |
 
 To add a new migration:
 
 ```bash
 # Option A — write it manually
-# Create supabase/migrations/002_your_change.sql and run:
+# Create supabase/migrations/004_your_change.sql, then:
 npm run db:push
 
 # Option B — make changes on a local Supabase instance and diff:
@@ -130,7 +161,7 @@ npm run db:push   # apply it
 
 ## DB ↔ JS column mapping
 
-Postgres uses `snake_case`; JS uses `camelCase`. Three mapper functions in `src/App.vue` handle the translation on every `select`:
+Postgres uses `snake_case`; JS uses `camelCase`. Mapper functions in `src/App.vue` handle the translation on every `select`:
 
 | Table | DB column | JS field |
 |---|---|---|
@@ -139,6 +170,8 @@ Postgres uses `snake_case`; JS uses `camelCase`. Three mapper functions in `src/
 | `tasks` | `created_at` | `createdAt` |
 | `reminders` | `task_id` | `taskId` |
 | `reminders` | `assignee_id` | `assigneeId` |
+| `task_statuses` | `sort_order` | `sortOrder` |
+| `task_statuses` | `key` | `status` *(renamed for consistency with `tasks.status`)* |
 
 All inserts use the DB column names (`snake_case`).
 

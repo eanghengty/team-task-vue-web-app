@@ -7,6 +7,8 @@ create table members (
   role       text not null default 'Team Member',
   color      text not null default '#e8ff47',
   access     text not null default 'user' check (access in ('admin', 'user')),
+  email      text unique,
+  password   text,
   created_at timestamptz not null default now()
 );
 
@@ -17,10 +19,25 @@ create table tasks (
   assignee_id uuid references members(id) on delete set null,
   priority    text not null default 'medium' check (priority in ('high','medium','low')),
   due         date,
-  status      text not null default 'todo' check (status in ('todo','progress','review','done')),
+  status      text not null default 'todo',
   done        boolean not null default false,
   created_at  timestamptz not null default now()
 );
+
+create table task_statuses (
+  id         uuid primary key default gen_random_uuid(),
+  key        text not null unique,
+  label      text not null,
+  dot        text not null default '#888888',
+  sort_order int  not null default 0,
+  created_at timestamptz not null default now()
+);
+
+insert into task_statuses (key, label, dot, sort_order) values
+  ('todo',     'Todo',        '#888888', 0),
+  ('progress', 'In Progress', '#e8ff47', 1),
+  ('review',   'Review',      '#47c5ff', 2),
+  ('done',     'Done',        '#444444', 3);
 
 create table reminders (
   id          uuid primary key default gen_random_uuid(),
@@ -33,11 +50,13 @@ create table reminders (
 );
 
 -- Enable Row Level Security (configure policies to match your auth setup)
-alter table members  enable row level security;
-alter table tasks    enable row level security;
-alter table reminders enable row level security;
+alter table members      enable row level security;
+alter table tasks        enable row level security;
+alter table reminders    enable row level security;
+alter table task_statuses enable row level security;
 
 -- Dev-only open policies — tighten these before going to production
-create policy "allow all members"   on members   for all using (true) with check (true);
-create policy "allow all tasks"     on tasks     for all using (true) with check (true);
-create policy "allow all reminders" on reminders for all using (true) with check (true);
+create policy "allow all members"      on members      for all using (true) with check (true);
+create policy "allow all tasks"        on tasks        for all using (true) with check (true);
+create policy "allow all reminders"    on reminders    for all using (true) with check (true);
+create policy "allow all task_statuses" on task_statuses for all using (true) with check (true);

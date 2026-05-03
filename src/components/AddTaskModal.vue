@@ -43,10 +43,7 @@
           <div>
             <label class="block text-xs font-mono mb-2" style="color:var(--muted)">STATUS</label>
             <select class="field" v-model="form.status">
-              <option value="todo">Todo</option>
-              <option value="progress">In Progress</option>
-              <option value="review">Review</option>
-              <option value="done">Done</option>
+              <option v-for="col in columns" :key="col.status" :value="col.status">{{ col.label }}</option>
             </select>
           </div>
         </div>
@@ -66,9 +63,10 @@
 
 <script setup>
 defineProps({
-  open: Boolean,
-  form: Object,
+  open:    Boolean,
+  form:    Object,
   members: Array,
+  columns: Array,
   shaking: Object,
 })
 defineEmits(['close', 'submit'])

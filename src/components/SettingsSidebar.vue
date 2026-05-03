@@ -9,7 +9,7 @@
   <!-- Sidebar panel -->
   <div
     class="fixed top-0 right-0 h-full z-[260] flex flex-col transition-transform duration-300"
-    style="width:420px;background:var(--surface);border-left:1px solid var(--border)"
+    style="width:440px;background:var(--surface);border-left:1px solid var(--border)"
     :style="{ transform: open ? 'translateX(0)' : 'translateX(100%)' }"
   >
     <!-- Header -->
@@ -25,19 +25,11 @@
 
     <!-- Tab nav -->
     <div class="flex gap-1 px-6 py-3 flex-shrink-0" style="border-bottom:1px solid var(--border)">
-      <button
-        class="tab-btn"
-        :class="{ active: activeTab === 'members' }"
-        @click="activeTab = 'members'"
-      >
+      <button class="tab-btn" :class="{ active: activeTab === 'members' }" @click="activeTab = 'members'">
         <span class="material-icons" style="font-size:15px;vertical-align:-3px;margin-right:5px">group</span>
         Members
       </button>
-      <button
-        class="tab-btn"
-        :class="{ active: activeTab === 'statuses' }"
-        @click="activeTab = 'statuses'"
-      >
+      <button class="tab-btn" :class="{ active: activeTab === 'statuses' }" @click="activeTab = 'statuses'">
         <span class="material-icons" style="font-size:15px;vertical-align:-3px;margin-right:5px">view_kanban</span>
         Task Statuses
       </button>
@@ -46,7 +38,7 @@
     <!-- Scrollable body -->
     <div class="flex-1 overflow-y-auto">
 
-      <!-- ── MEMBERS TAB ─────────────────────────────────────── -->
+      <!-- ── MEMBERS TAB ──────────────────────────────────────── -->
       <div v-if="activeTab === 'members'" class="p-6 flex flex-col gap-4">
         <div class="flex items-center justify-between">
           <p class="text-xs font-mono" style="color:var(--muted)">{{ members.length }} MEMBER{{ members.length !== 1 ? 'S' : '' }}</p>
@@ -58,16 +50,43 @@
 
         <!-- Member rows -->
         <div v-for="m in members" :key="m.id" class="member-row">
-          <!-- Editing state -->
+
+          <!-- ── Edit state ── -->
           <template v-if="editingId === m.id">
             <div class="flex flex-col gap-3">
+              <!-- Avatar preview + name -->
               <div class="flex items-center gap-3">
                 <div class="avatar flex-shrink-0" :style="{ background: editForm.color, color: '#0d0d0d' }">
                   {{ initials(editForm.name) }}
                 </div>
                 <input class="field text-sm" v-model="editForm.name" placeholder="Full name" />
               </div>
+
+              <!-- Job role -->
               <input class="field text-sm" v-model="editForm.role" placeholder="Job role" />
+
+              <!-- Email -->
+              <input class="field text-sm" type="email" v-model="editForm.email" placeholder="Email address" />
+
+              <!-- Password -->
+              <div class="relative">
+                <input
+                  class="field text-sm pr-10"
+                  :type="showEditPw ? 'text' : 'password'"
+                  v-model="editForm.password"
+                  placeholder="New password (leave blank to keep)"
+                />
+                <button
+                  type="button"
+                  class="absolute right-3 top-1/2 -translate-y-1/2"
+                  style="color:var(--muted);display:flex;align-items:center"
+                  @click="showEditPw = !showEditPw"
+                >
+                  <span class="material-icons" style="font-size:16px">{{ showEditPw ? 'visibility_off' : 'visibility' }}</span>
+                </button>
+              </div>
+
+              <!-- Color + Access -->
               <div class="flex items-center gap-3">
                 <div class="flex gap-1.5">
                   <div v-for="c in memberColors" :key="c"
@@ -81,27 +100,48 @@
                   <option value="user">User</option>
                 </select>
               </div>
+
               <div class="flex gap-2">
                 <button class="btn-primary text-xs px-4 py-2 flex-1" @click="saveEdit(m.id)">Save</button>
-                <button class="btn-ghost text-xs px-4 py-2" @click="editingId = null">Cancel</button>
+                <button class="btn-ghost text-xs px-4 py-2" @click="cancelEdit">Cancel</button>
               </div>
             </div>
           </template>
 
-          <!-- View state -->
+          <!-- ── View state ── -->
           <template v-else>
             <div class="flex items-center gap-3">
               <div class="avatar flex-shrink-0" :style="{ background: m.color, color: '#0d0d0d' }">
                 {{ initials(m.name) }}
               </div>
               <div class="flex-1 min-w-0">
-                <div class="font-medium text-sm truncate">{{ m.name }}</div>
+                <div class="flex items-center gap-2">
+                  <span class="font-medium text-sm truncate">{{ m.name }}</span>
+                  <span class="badge flex-shrink-0" :class="m.access === 'admin' ? 'badge-yellow' : 'badge-gray'">
+                    {{ m.access }}
+                  </span>
+                </div>
                 <div class="text-xs mt-0.5 truncate" style="color:var(--muted)">{{ m.role }}</div>
+                <div v-if="m.email" class="flex items-center gap-1 mt-1">
+                  <span class="material-icons" style="font-size:12px;color:var(--muted)">mail</span>
+                  <span class="text-xs truncate font-mono" style="color:var(--muted)">{{ m.email }}</span>
+                </div>
+                <div v-if="m.password" class="flex items-center gap-1 mt-0.5">
+                  <span class="material-icons" style="font-size:12px;color:var(--muted)">lock</span>
+                  <span class="text-xs font-mono" style="color:var(--muted)">
+                    {{ revealPwId === m.id ? m.password : '••••••••' }}
+                  </span>
+                  <button
+                    class="ml-1"
+                    style="color:var(--muted);display:flex;align-items:center"
+                    @click.stop="revealPwId = revealPwId === m.id ? null : m.id"
+                  >
+                    <span class="material-icons" style="font-size:13px">
+                      {{ revealPwId === m.id ? 'visibility_off' : 'visibility' }}
+                    </span>
+                  </button>
+                </div>
               </div>
-              <span
-                class="badge flex-shrink-0"
-                :class="m.access === 'admin' ? 'badge-yellow' : 'badge-gray'"
-              >{{ m.access }}</span>
               <div class="flex items-center gap-1 flex-shrink-0">
                 <button class="icon-btn" title="Edit" @click="startEdit(m)">
                   <span class="material-icons" style="font-size:16px">edit</span>
@@ -112,6 +152,7 @@
               </div>
             </div>
           </template>
+
         </div>
 
         <div v-if="!members.length" class="text-center py-12" style="color:var(--muted)">
@@ -122,8 +163,27 @@
 
       <!-- ── TASK STATUSES TAB ───────────────────────────────── -->
       <div v-if="activeTab === 'statuses'" class="p-6 flex flex-col gap-4">
-        <p class="text-xs font-mono" style="color:var(--muted)">{{ columns.length }} STATUSES</p>
+        <div class="flex items-center justify-between">
+          <p class="text-xs font-mono" style="color:var(--muted)">{{ columns.length }} STATUSES</p>
+          <button class="btn-primary flex items-center gap-1.5 text-xs px-3 py-1.5" @click="showAddStatus = !showAddStatus">
+            <span class="material-icons" style="font-size:14px">{{ showAddStatus ? 'close' : 'add' }}</span>
+            {{ showAddStatus ? 'Cancel' : 'Add Status' }}
+          </button>
+        </div>
 
+        <!-- Add status form -->
+        <div v-if="showAddStatus" class="member-row flex flex-col gap-3">
+          <div class="flex items-center gap-3">
+            <input type="color" class="w-9 h-9 rounded cursor-pointer border-0 bg-transparent flex-shrink-0" v-model="newStatusForm.dot" />
+            <input class="field text-sm" v-model="newStatusForm.label" placeholder="Status label, e.g. In Review" @keyup.enter="submitAddStatus" />
+          </div>
+          <div v-if="newStatusForm.label" class="text-xs font-mono px-1" style="color:var(--muted)">
+            key: {{ slugify(newStatusForm.label) }}
+          </div>
+          <button class="btn-primary text-xs px-4 py-2" @click="submitAddStatus">Add Status</button>
+        </div>
+
+        <!-- Status rows -->
         <div v-for="col in columns" :key="col.status" class="member-row">
           <template v-if="editingStatusKey === col.status">
             <div class="flex flex-col gap-3">
@@ -140,21 +200,27 @@
           <template v-else>
             <div class="flex items-center gap-3">
               <div class="w-3 h-3 rounded-full flex-shrink-0" :style="{ background: col.dot }" />
-              <div class="flex-1">
+              <div class="flex-1 min-w-0">
                 <div class="font-medium text-sm">{{ col.label }}</div>
-                <div class="text-xs mt-0.5 font-mono" style="color:var(--muted)">{{ col.status }}</div>
+                <div class="text-xs mt-0.5 font-mono truncate" style="color:var(--muted)">{{ col.status }}</div>
               </div>
-              <span class="badge badge-gray text-xs">{{ taskCountByStatus[col.status] ?? 0 }} tasks</span>
-              <button class="icon-btn" title="Edit label & colour" @click="startStatusEdit(col)">
-                <span class="material-icons" style="font-size:16px">edit</span>
-              </button>
+              <span class="badge badge-gray text-xs flex-shrink-0">{{ taskCountByStatus[col.status] ?? 0 }} tasks</span>
+              <div class="flex items-center gap-1 flex-shrink-0">
+                <button class="icon-btn" title="Edit" @click="startStatusEdit(col)">
+                  <span class="material-icons" style="font-size:16px">edit</span>
+                </button>
+                <button class="icon-btn" title="Delete" style="color:var(--accent2)" @click="$emit('delete-status', col.status)">
+                  <span class="material-icons" style="font-size:16px">delete</span>
+                </button>
+              </div>
             </div>
           </template>
         </div>
 
-        <p class="text-xs mt-2" style="color:var(--muted);line-height:1.6">
-          Status keys are fixed by the database schema. You can rename labels and change dot colours here.
-        </p>
+        <div v-if="!columns.length" class="text-center py-12" style="color:var(--muted)">
+          <span class="material-icons" style="font-size:40px;display:block;margin-bottom:8px">view_kanban</span>
+          <p class="text-sm">No statuses yet</p>
+        </div>
       </div>
 
     </div>
@@ -165,27 +231,40 @@
 import { ref, reactive, computed } from 'vue'
 
 const props = defineProps({
-  open:        Boolean,
-  members:     Array,
-  columns:     Array,
-  tasks:       Array,
+  open:         Boolean,
+  members:      Array,
+  columns:      Array,
+  tasks:        Array,
   memberColors: Array,
 })
 
-const emit = defineEmits(['close', 'open-add-member', 'update-member', 'delete-member', 'update-status'])
+const emit = defineEmits(['close', 'open-add-member', 'update-member', 'delete-member', 'update-status', 'add-status', 'delete-status'])
 
-const activeTab       = ref('members')
-const editingId       = ref(null)
+const activeTab        = ref('members')
+const editingId        = ref(null)
 const editingStatusKey = ref(null)
+const revealPwId       = ref(null)
+const showEditPw       = ref(false)
+const showAddStatus    = ref(false)
 
-const editForm = reactive({ name: '', role: '', color: '', access: 'user' })
+const editForm       = reactive({ name: '', role: '', email: '', password: '', color: '', access: 'user' })
 const statusEditForm = reactive({ label: '', dot: '' })
+const newStatusForm  = reactive({ label: '', dot: '#47ff8a' })
+
+function slugify(label) {
+  return label.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
+}
+
+function submitAddStatus() {
+  if (!newStatusForm.label.trim()) return
+  emit('add-status', { label: newStatusForm.label.trim(), dot: newStatusForm.dot })
+  Object.assign(newStatusForm, { label: '', dot: '#47ff8a' })
+  showAddStatus.value = false
+}
 
 const taskCountByStatus = computed(() => {
   const counts = {}
-  for (const t of props.tasks) {
-    counts[t.status] = (counts[t.status] ?? 0) + 1
-  }
+  for (const t of props.tasks) counts[t.status] = (counts[t.status] ?? 0) + 1
   return counts
 })
 
@@ -195,12 +274,26 @@ function initials(name) {
 
 function startEdit(m) {
   editingId.value = m.id
-  Object.assign(editForm, { name: m.name, role: m.role, color: m.color, access: m.access ?? 'user' })
+  showEditPw.value = false
+  Object.assign(editForm, {
+    name:     m.name,
+    role:     m.role,
+    email:    m.email ?? '',
+    password: '',
+    color:    m.color,
+    access:   m.access ?? 'user',
+  })
+}
+
+function cancelEdit() {
+  editingId.value = null
+  showEditPw.value = false
 }
 
 function saveEdit(id) {
   emit('update-member', { id, ...editForm })
   editingId.value = null
+  showEditPw.value = false
 }
 
 function startStatusEdit(col) {

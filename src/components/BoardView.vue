@@ -9,7 +9,7 @@
       <div class="column-header">
         <div class="w-2 h-2 rounded-full flex-shrink-0" :style="{ background: col.dot }"></div>
         <span class="text-sm font-semibold">{{ col.label }}</span>
-        <span class="ml-auto badge" :class="col.badgeClass">{{ tasksByStatus(col.status).length }}</span>
+        <span class="ml-auto badge" :style="dotToBadgeStyle(col.dot)">{{ tasksByStatus(col.status).length }}</span>
       </div>
       <div class="p-3 flex flex-col gap-2">
         <div v-if="tasksByStatus(col.status).length === 0"
@@ -31,6 +31,7 @@
 
 <script setup>
 import TaskCard from './TaskCard.vue'
+import { dotToBadgeStyle } from '../utils.js'
 
 const props = defineProps({
   columns: Array,

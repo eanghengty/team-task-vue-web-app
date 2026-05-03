@@ -2,16 +2,65 @@
 
 All notable changes to SQUAD — Team Task Board.
 
+## [3.3.0] — 2026-05-03
+
+### Changed
+- **Task statuses are now fully dynamic.** The hardcoded `CHECK (status IN ('todo','progress','review','done'))` constraint has been removed from `tasks.status`. Valid statuses are whatever rows exist in the new `task_statuses` table.
+- `columns` ref in `App.vue` is now loaded from `task_statuses` on mount instead of being a hardcoded array.
+- `toggleDone` now resolves the "done" column as the **last** row by `sort_order` and the "first" column as the first row — no longer hardcoded to `'done'` / `'todo'`.
+- `form.status` default is set to the first column key after `fetchAll()` completes.
+- `updateColumn` now persists label and dot colour changes to `task_statuses` in Supabase (previously in-memory only).
+- Status badges in `BoardView`, `ListView`, and `TaskDetailModal` now use `dotToBadgeStyle(dot)` inline styles instead of fixed CSS badge classes (`badge-yellow`, `badge-blue`, etc.).
+- `AddTaskModal` status `<select>` is now `v-for` over the `columns` prop — options update automatically when statuses change.
+- `columns` prop added to `ListView`, `AddTaskModal`, and `TaskDetailModal` so all status label/colour resolution is dynamic.
+
+### Added
+- `task_statuses` Supabase table: `key`, `label`, `dot`, `sort_order`. Seeded with the 4 original statuses.
+- `addStatus({ label, dot })` action in `App.vue` — inserts a new `task_statuses` row; key auto-generated from label via `labelToKey()`.
+- `deleteStatus(status)` action in `App.vue` — deletes the row; blocked with a red toast if any tasks still use that status key.
+- `mapStatus(row)` mapper in `App.vue` — translates `task_statuses` snake_case to camelCase JS shape.
+- `dotToBadgeStyle(dot)` helper in `src/utils.js` — converts a hex dot colour to an inline badge style object.
+- `labelToKey(label)` helper in `src/utils.js` — slugifies a label to a DB-safe key (`"In Review"` → `"in_review"`).
+- **Settings sidebar — Task Statuses tab** now supports:
+  - **Add Status** — inline form with colour picker and label input; key previewed in real time.
+  - **Delete Status** — per-row delete button; blocked if tasks are currently using that status.
+
+### Removed
+- `statusLabel()` and `statusBadgeClass()` from `src/utils.js` — replaced by dynamic column lookups.
+- `badgeClass` field from the `columns` shape — badge appearance is now derived from `dot` at runtime.
+- DB check constraint on `tasks.status` (migration `003`).
+
+### DB
+- Migration `003_dynamic_task_statuses.sql` applied.
+
+---
+
+## [3.2.0] — 2026-05-03
+
+### Added
+- **Email and password fields on members** — stored in Supabase. Added to the Add Member modal and the Settings sidebar.
+- `AddMemberModal` now includes: Email (text input), Password (show/hide toggle), and Access (admin/user dropdown) fields.
+- **Settings sidebar — Members tab** view state now shows email (with mail icon) and masked password (with reveal/hide toggle) for each member.
+- Edit state in the Members tab includes email and password fields — password field left blank preserves the existing password.
+- `updateMember` in `App.vue` only patches the password column when the edit form's password field is non-empty.
+- `memberForm` in `App.vue` gains `email`, `password`, and `access` fields.
+- DB migration `002_add_member_credentials.sql`: adds `email text unique` and `password text` to `members`.
+
+---
+
 ## [3.1.0] — 2026-05-03
 
 ### Added
-- **Settings sidebar** — right-side sliding panel opened via the Settings button in the header.
-  - **Members tab** — view all members with avatar, job role, and access badge (admin/user). Inline edit name, job role, colour, and access role. Delete members directly from settings.
-  - **Task Statuses tab** — view all kanban statuses with dot colour and task count. Edit labels and dot colours inline.
-  - "+ Add Member" shortcut button inside the sidebar opens the existing Add Member modal.
-- `access` field on members (`admin | user`, default `user`) — persisted in Supabase. DB migration: `supabase/migrations/001_add_member_access.sql`.
-- `updateMember` and `deleteMember` actions in `App.vue`; `updateColumn` mutates the `columns` ref in-memory.
-- `columns` promoted from a plain array to a `ref` so status label/colour edits are reactive.
+- **Settings sidebar** — right-side sliding panel (`width: 440px`, `z-[260]`) opened via the Settings button in the header.
+  - **Members tab** — view all members with avatar, job role, and access badge (admin/user). Inline-edit name, job role, colour, and access role. Delete members directly from settings. "+ Add Member" shortcut opens the existing modal.
+  - **Task Statuses tab** — view all kanban statuses with dot colour and live task count. Inline-edit labels and dot colours.
+- `access` field on members (`admin | user`, default `user`) — persisted in Supabase.
+- `updateMember`, `deleteMember` actions in `App.vue`.
+- `updateColumn` action mutates the `columns` ref (in-memory at this version — persisted to DB from v3.3.0).
+- `showSettings` ref in `App.vue` controls sidebar visibility.
+- Settings button added to `AppHeader.vue`.
+- Supabase CLI installed as a dev dependency (`supabase` package). npm scripts added: `db:login`, `db:link`, `db:push`, `db:pull`, `db:diff`, `db:reset`, `db:types`.
+- DB migration `001_add_member_access.sql` applied.
 
 ---
 

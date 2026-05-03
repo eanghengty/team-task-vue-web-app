@@ -56,15 +56,17 @@
 
 <script setup>
 import { computed } from 'vue'
-import { priorityDotColor, statusLabel, isOverdue } from '../utils.js'
+import { priorityDotColor, isOverdue } from '../utils.js'
 
 const props = defineProps({
-  open: Boolean,
-  task: Object,
+  open:    Boolean,
+  task:    Object,
   members: Array,
+  columns: Array,
 })
 defineEmits(['close', 'toggle-done', 'delete-task'])
 
-const assignee = computed(() => props.members.find(m => m.id === props.task?.assigneeId))
-const overdue  = computed(() => props.task ? isOverdue(props.task) : false)
+const assignee    = computed(() => props.members.find(m => m.id === props.task?.assigneeId))
+const overdue     = computed(() => props.task ? isOverdue(props.task) : false)
+const statusLabel = (key) => props.columns?.find(c => c.status === key)?.label ?? key
 </script>
