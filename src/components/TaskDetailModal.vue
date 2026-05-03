@@ -4,7 +4,7 @@
       <div class="p-5" style="border-bottom:1px solid var(--border)">
         <div class="flex items-center justify-between">
           <span class="font-display text-xl tracking-wider">TASK DETAIL</span>
-          <button @click="$emit('close')" style="color:var(--muted)">✕</button>
+          <button @click="$emit('close')" style="color:var(--muted);display:flex;align-items:center"><span class="material-icons" style="font-size:20px">close</span></button>
         </div>
       </div>
       <div class="p-5 flex flex-col gap-4">

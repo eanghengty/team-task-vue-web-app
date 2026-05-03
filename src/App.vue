@@ -155,7 +155,7 @@ function addTask() {
 
   modals.add = false
   Object.assign(form, { title: '', desc: '', assigneeId: '', priority: 'medium', due: '', status: 'todo', reminderDt: '' })
-  showToast('✅ Task Created', task.title, 'yellow')
+  showToast('Task Created', task.title, 'yellow')
 }
 
 function toggleDone(id) {
@@ -175,7 +175,7 @@ function addReminder() {
   modals.reminder = false
   const title = remForm.title
   Object.assign(remForm, { title: '', taskId: '', datetime: '', assigneeId: 'team' })
-  showToast('⏰ Reminder Set', title, 'yellow')
+  showToast('Reminder Set', title, 'yellow')
 }
 
 function deleteReminder(id) {
@@ -186,7 +186,7 @@ function addMember() {
   if (!memberForm.name.trim()) return
   members.value.push({ id: uid(), name: memberForm.name.trim(), role: memberForm.role.trim() || 'Team Member', color: memberForm.color })
   modals.member = false
-  showToast('🧑‍💼 Member Added', `${memberForm.name} joined the team`, 'blue')
+  showToast('Member Added', `${memberForm.name} joined the team`, 'blue')
   Object.assign(memberForm, { name: '', role: '', color: '#e8ff47' })
 }
 
@@ -233,7 +233,7 @@ onMounted(() => {
     reminders.value.forEach(r => {
       if (!r.fired && new Date(r.datetime) <= now) {
         r.fired = true
-        showToast('⏰ Reminder', r.title, 'yellow', 8000)
+        showToast('Reminder', r.title, 'yellow', 8000)
       }
     })
   }, 15000)

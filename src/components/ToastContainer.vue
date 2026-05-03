@@ -8,7 +8,7 @@
         <div class="text-sm font-semibold">{{ toast.title }}</div>
         <div class="text-xs mt-0.5 truncate" style="color:var(--muted)">{{ toast.msg }}</div>
       </div>
-      <button @click="$emit('remove', toast.id)" style="color:var(--muted);font-size:14px;flex-shrink:0">✕</button>
+      <button @click="$emit('remove', toast.id)" style="color:var(--muted);flex-shrink:0;line-height:1;display:flex;align-items:center"><span class="material-icons" style="font-size:16px">close</span></button>
     </div>
   </div>
 </template>

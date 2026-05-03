@@ -60,6 +60,7 @@ src/
 - **Tailwind 3** utility classes + custom CSS in `src/style.css` via `@layer components`.
 - CSS custom properties (`--accent`, `--surface`, `--border`, etc.) defined in `:root` are used throughout both the stylesheet and inline `:style` bindings in the template. Prefer inline style for one-off color references, `@layer components` for reusable patterns.
 - Fonts: `Bebas Neue` (`.font-display`), `DM Mono` (`.font-mono`), `Space Grotesk` (default body).
+- Icons: **Google Material Icons** loaded via CDN in `index.html`. Use `<span class="material-icons">icon_name</span>` — no emoji in the UI.
 
 ### Key behaviours
 

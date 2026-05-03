@@ -31,7 +31,7 @@
         <div class="flex items-center gap-2">
           <span v-if="r.fired" class="badge badge-gray text-xs">fired</span>
           <button @click="$emit('delete-reminder', r.id)"
-            class="text-xs font-mono hover:text-red-400 transition-colors" style="color:var(--muted)">✕</button>
+            class="hover:text-red-400 transition-colors" style="color:var(--muted);display:flex;align-items:center"><span class="material-icons" style="font-size:16px">close</span></button>
         </div>
       </div>
     </div>

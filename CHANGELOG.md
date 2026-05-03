@@ -2,6 +2,14 @@
 
 All notable changes to SQUAD — Team Task Board.
 
+## [2.2.0] — 2026-05-03
+
+### Changed
+- **Replaced all emoji with Material Icons.** Added Google Material Icons stylesheet to `index.html`; all `✕` dismiss/delete buttons across `ToastContainer.vue`, `AddMemberModal.vue`, `TaskDetailModal.vue`, and `RemindersView.vue` now use `<span class="material-icons">close</span>`.
+- Toast notification titles in `App.vue` stripped of emoji prefixes (`✅`, `⏰`, `🧑‍💼`) — titles are now plain text.
+
+---
+
 ## [2.1.0] — 2026-05-03
 
 ### Changed
