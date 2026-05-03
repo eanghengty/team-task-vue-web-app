@@ -35,6 +35,15 @@
             </select>
           </div>
         </div>
+
+        <!-- notice shown when a non-admin user assigns to someone else -->
+        <div v-if="showConfirmNotice"
+          class="text-xs px-3 py-2.5 rounded-lg flex items-start gap-2"
+          style="background:rgba(232,255,71,0.07);color:var(--accent);border:1px solid rgba(232,255,71,0.2)">
+          <span class="material-icons flex-shrink-0" style="font-size:14px;margin-top:1px">info</span>
+          <span>The assignee will receive a notification to <strong>confirm</strong> this task before it becomes active.</span>
+        </div>
+
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="block text-xs font-mono mb-2" style="color:var(--muted)">DUE DATE</label>
@@ -62,12 +71,21 @@
 </template>
 
 <script setup>
-defineProps({
-  open:    Boolean,
-  form:    Object,
-  members: Array,
-  columns: Array,
-  shaking: Object,
+import { computed } from 'vue'
+
+const props = defineProps({
+  open:        Boolean,
+  form:        Object,
+  members:     Array,
+  columns:     Array,
+  shaking:     Object,
+  currentUser: Object,
 })
 defineEmits(['close', 'submit'])
+
+const showConfirmNotice = computed(() =>
+  props.currentUser?.access === 'user' &&
+  props.form?.assigneeId &&
+  props.form.assigneeId !== props.currentUser?.id
+)
 </script>

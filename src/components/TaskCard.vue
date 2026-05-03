@@ -28,7 +28,11 @@
           {{ overdue ? '⚠ ' : '' }}{{ task.due }}
         </span>
       </div>
-      <div class="flex items-center gap-1">
+      <div class="flex items-center gap-1.5">
+        <!-- pending confirmation badge -->
+        <span v-if="task.confirmed === false"
+          class="text-xs font-mono px-1.5 py-0.5 rounded"
+          style="background:rgba(255,158,71,0.15);color:#ff9e47;font-size:9px">PENDING</span>
         <svg v-if="hasReminder" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#e8ff47" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
         <div class="rounded-full" style="width:6px;height:6px" :style="{ background: priorityDot }"></div>
       </div>
@@ -41,12 +45,12 @@ import { computed } from 'vue'
 import { priorityDotColor, isOverdue } from '../utils.js'
 
 const props = defineProps({
-  task: Object,
-  member: Object,
+  task:        Object,
+  member:      Object,
   hasReminder: Boolean,
 })
 defineEmits(['dragstart', 'dragend', 'click', 'toggle-done'])
 
-const overdue    = computed(() => isOverdue(props.task))
+const overdue     = computed(() => isOverdue(props.task))
 const priorityDot = computed(() => priorityDotColor(props.task.priority))
 </script>

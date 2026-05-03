@@ -2,14 +2,76 @@
 
 All notable changes to SQUAD — Team Task Board.
 
+## [3.5.0] — 2026-05-03
+
+### Added
+- **Task edit** — inline edit mode in `TaskDetailModal` (title, desc, priority, due, status). Edit button only rendered when `currentUser.access === 'admin'` or the task is assigned to the current user. Delete button follows the same restriction.
+- **Activity log** — new `activity_logs` table (migration 004). Append-only; entries are never deleted. Admin-only **Activity Log tab** in `TabBar` renders `ActivityLogView.vue`, which fetches and paginates 20 entries per page with Prev/Next controls and a Refresh button. Actor name and avatar are joined server-side.
+- **Task comments** — new `task_comments` table (migration 004). Comments section in `TaskDetailModal` shows all comments for the open task (fetched directly from Supabase, not routed through App.vue). All logged-in users can add a comment via text input (Enter or Send button). Intended for progress updates and obstacle notes. Adding a comment emits `comment-added` → `App.vue` logs a `task_commented` activity entry.
+- **Notification bell** — bell icon in `AppHeader` with a red unread-count badge driven by `unreadCount` computed. Clicking toggles `NotificationPanel`.
+- **`NotificationPanel.vue`** — fixed dropdown below the bell, `z-[260]`. Lists last 50 notifications for the current user only. Shows actor icon, message, and timestamp. Unread rows have an accent dot. "Mark all read" button. Assignment request rows show **Accept** and **Decline** buttons.
+- **`notifications` table** (migration 004) — per-member inbox with `member_id`, `sender_id`, `type`, `message`, `task_id`, `read`. Types: `task_assigned`, `task_assignment_request`, `task_confirmed`, `task_declined`.
+- **Assignment confirmation flow** — when a `user` role creates a task assigned to another member, the task is saved with `confirmed = false` and a `task_assignment_request` notification is sent to the assignee. Admin-created tasks and self-assigned tasks are always `confirmed = true`.
+  - Assignee accepts → `confirmed = true`; `task_confirmed` notification sent to original assigner.
+  - Assignee declines → task deleted; `task_declined` notification sent to original assigner.
+- **PENDING badge** — `TaskCard` and `ListView` both show an orange PENDING badge on tasks with `confirmed = false`. `TaskDetailModal` shows a pending warning banner and hides action buttons for unconfirmed tasks.
+- **Cross-assignment notice** in `AddTaskModal` — inline info banner shown when a non-admin user selects an assignee other than themselves.
+- `confirmed boolean default true` column added to `tasks` (migration 004).
+- `fetchNotifications()` action in `App.vue` — fetches last 50 notifications for `currentUser`; called in `fetchAll()` and every 15 s in the reminder interval.
+- `markAllNotificationsRead()`, `acceptAssignment(notif)`, `declineAssignment(notif)` actions in `App.vue`.
+- `logActivity(action, entityType, entityId, message)` helper called after every significant action: task created/updated/deleted/status-changed/commented/confirmed/declined, reminder created, member added/deleted.
+- `editTask({ id, … })` action in `App.vue` — updates task fields and logs activity.
+- `onCommentAdded()` handler in `App.vue` — logs `task_commented` activity entry.
+- `notifications` ref, `showNotifications` ref, `unreadCount` computed added to App.vue state.
+- `mapNotification(row)` mapper added to App.vue.
+- `confirmed` field added to `mapTask(row)`.
+- `currentUser` prop added to `AddTaskModal`, `TaskDetailModal`, `TabBar`.
+- `unreadCount` prop added to `AppHeader`.
+- `NotificationPanel` imported and rendered in App.vue template.
+- `ActivityLogView` imported and rendered in App.vue template when `currentTab === 'activity'`.
+
+### Changed
+- `TabBar` — accepts `currentUser` prop; Activity Log tab rendered only for admins.
+- `AppHeader` — accepts `unreadCount` prop; emits `open-notifications`.
+- `TaskDetailModal` — accepts `currentUser` prop; emits `edit-task`, `comment-added`; shows edit/delete buttons conditionally; shows PENDING badge and pending warning.
+- `AddTaskModal` — accepts `currentUser` prop; shows cross-assignment confirmation notice.
+- `TaskCard` — shows PENDING badge when `task.confirmed === false`.
+- `ListView` — PENDING badge inline next to task title when `task.confirmed === false`.
+- `onDrop` in App.vue — correctly derives `done` from the last column key rather than hardcoded `'done'` string; logs activity.
+- `deleteTask` — logs `task_deleted` activity.
+- `toggleDone` — logs `task_status_changed` activity.
+- `addMember` / `deleteMember` — log activity.
+- `addReminder` — logs activity.
+- `logout()` — also clears `notifications` ref and `showNotifications`.
+- Reminder interval — also calls `fetchNotifications()` on every tick.
+
+### DB
+- Migration `004_activity_comments_notifications.sql` applied.
+
+---
+
 ## [3.4.0] — 2026-05-03
-- Login screen added — app requires email + password before access.
-- `currentUser` ref in `App.vue`; login queries `members` table by email/password.
-- Role-based UI: `admin` has full access; `user` can add tasks but cannot add members or manage task statuses.
-- Settings sidebar for `user` role shows only a Change Password form.
-- `AddMemberModal` hidden for `user` role.
-- `AppHeader` shows current user avatar, name, and logout button.
-- `LoginView.vue` component added.
+
+### Added
+- **Login screen** (`LoginView.vue`) — full-screen centred card shown before the app loads. Email + password fields with show/hide toggle, Enter key support, and error display. No registration link.
+- `currentUser` ref in `App.vue` — `null` when unauthenticated; set to the matched `members` row on login.
+- `loginError` and `loginLoading` refs in `App.vue` — passed as props to `LoginView` to drive error and spinner state.
+- `login({ email, password })` action — queries `members` table with `eq('email', …).eq('password', …).single()`; calls `startApp()` on success.
+- `logout()` action — clears `currentUser`, stops clock + reminder intervals, resets all state refs.
+- `startApp()` / `stopApp()` helpers — extracted from `onMounted` so the clock and reminder checker start after login and stop on logout.
+- **Role-based UI gating:**
+  - `admin` — full access (unchanged from v3.3.0).
+  - `user` — New Task and Reminders buttons available; Settings shows only a Change Password form; Add Member modal is hidden.
+- **Settings sidebar — user view** — no tabs; shows the logged-in user's avatar + email (read-only) and a Change Password form with new + confirm fields and match validation.
+- **AppHeader** — logged-in user's colour avatar and name displayed next to the action buttons; logout button (Material Icon `logout`) emits `logout`.
+- `currentUser` prop added to `AppHeader` and `SettingsSidebar`.
+- **Self-update sync** — `updateMember` patches `currentUser` when the updated member is the logged-in user, keeping the header avatar/name live without requiring a re-login.
+
+### Changed
+- `App.vue` template restructured: `<LoginView v-if="!currentUser" …>` / `<template v-else>` wraps the entire app.
+- `fetchAll()`, clock interval, and reminder interval are no longer started in `onMounted` — they now start inside `startApp()` which is called after a successful login.
+- `AddMemberModal` rendered with `v-if="currentUser.access === 'admin'"` — the component is not mounted at all for `user` role.
+- `SettingsSidebar` tab nav rendered with `v-if="currentUser.access === 'admin'"` — users never see the Members or Task Statuses tabs.
 
 ## [3.3.0] — 2026-05-03
 

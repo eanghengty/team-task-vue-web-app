@@ -6,6 +6,11 @@
       Reminders
       <span class="badge badge-yellow ml-1" style="font-size:10px;padding:1px 6px">{{ pendingCount }}</span>
     </button>
+    <button v-if="currentUser?.access === 'admin'"
+      class="tab-btn" :class="{ active: currentTab === 'activity' }"
+      @click="$emit('update:currentTab', 'activity')">
+      <span class="material-icons" style="font-size:13px;vertical-align:-2px;margin-right:4px">history</span>Activity Log
+    </button>
     <div class="flex-1"></div>
     <div class="flex items-center gap-2">
       <span class="text-xs" style="color:var(--muted)">Filter:</span>
@@ -27,11 +32,12 @@
 
 <script setup>
 defineProps({
-  currentTab: String,
-  members: Array,
-  filterMember: String,
+  currentTab:     String,
+  members:        Array,
+  filterMember:   String,
   filterPriority: String,
-  pendingCount: Number,
+  pendingCount:   Number,
+  currentUser:    Object,
 })
 defineEmits(['update:currentTab', 'update:filterMember', 'update:filterPriority'])
 </script>

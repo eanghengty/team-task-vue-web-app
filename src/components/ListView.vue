@@ -20,7 +20,16 @@
               <svg v-if="task.done" width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </div>
           </td>
-          <td class="p-3 text-sm" :class="{ 'line-through': task.done }" :style="task.done ? 'color:var(--muted)' : ''">{{ task.title }}</td>
+          <td class="p-3">
+            <div class="flex items-center gap-2">
+              <span class="text-sm" :class="{ 'line-through': task.done }" :style="task.done ? 'color:var(--muted)' : ''">
+                {{ task.title }}
+              </span>
+              <span v-if="task.confirmed === false"
+                class="text-xs font-mono px-1.5 py-0.5 rounded flex-shrink-0"
+                style="background:rgba(255,158,71,0.15);color:#ff9e47;font-size:9px">PENDING</span>
+            </div>
+          </td>
           <td class="p-3">
             <div class="flex items-center gap-2">
               <div v-if="memberById(task.assigneeId)" class="avatar"

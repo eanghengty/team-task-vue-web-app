@@ -20,14 +20,29 @@
         <span class="material-icons" style="font-size:16px">settings</span>
         Settings
       </button>
+
+      <!-- notification bell -->
+      <button @click="$emit('open-notifications')" class="btn-ghost flex items-center gap-1.5 relative" title="Notifications">
+        <span class="material-icons" style="font-size:18px">notifications</span>
+        <span v-if="unreadCount > 0"
+          class="absolute flex items-center justify-center font-mono font-bold"
+          style="top:-4px;right:-4px;min-width:16px;height:16px;padding:0 3px;border-radius:8px;font-size:9px;background:var(--accent2);color:#fff">
+          {{ unreadCount > 99 ? '99+' : unreadCount }}
+        </span>
+      </button>
+
       <div class="w-px h-5" style="background:var(--border)"></div>
-      <!-- Current user chip -->
+
+      <!-- current user chip -->
       <div class="flex items-center gap-2">
         <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
           :style="{ background: currentUser.color, color: '#0d0d0d' }">
           {{ initials(currentUser.name) }}
         </div>
-        <span class="text-sm font-medium hidden sm:block" style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ currentUser.name }}</span>
+        <span class="text-sm font-medium hidden sm:block"
+          style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          {{ currentUser.name }}
+        </span>
       </div>
       <button @click="$emit('logout')" class="btn-ghost flex items-center gap-1.5" title="Sign out">
         <span class="material-icons" style="font-size:16px">logout</span>
@@ -37,8 +52,8 @@
 </template>
 
 <script setup>
-defineProps({ clock: String, currentUser: Object })
-defineEmits(['open-modal', 'open-settings', 'logout'])
+defineProps({ clock: String, currentUser: Object, unreadCount: Number })
+defineEmits(['open-modal', 'open-settings', 'open-notifications', 'logout'])
 
 function initials(name) {
   return (name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()

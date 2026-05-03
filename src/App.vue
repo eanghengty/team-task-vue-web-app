@@ -9,7 +9,15 @@
 
   <!-- App -->
   <template v-else>
-    <AppHeader :clock="clock" :current-user="currentUser" @open-modal="openModal" @open-settings="showSettings = true" @logout="logout" />
+    <AppHeader
+      :clock="clock"
+      :current-user="currentUser"
+      :unread-count="unreadCount"
+      @open-modal="openModal"
+      @open-settings="showSettings = true"
+      @open-notifications="showNotifications = !showNotifications"
+      @logout="logout"
+    />
     <ToastContainer :toasts="toasts" @remove="removeToast" />
     <StatsBar :tasks="tasks" :members="members" @open-modal="openModal" />
     <TabBar
@@ -18,6 +26,7 @@
       v-model:filterPriority="filterPriority"
       :members="members"
       :pending-count="pendingReminders.length"
+      :current-user="currentUser"
     />
 
     <main class="p-6">
@@ -52,6 +61,7 @@
           @open-modal="openModal"
           @delete-reminder="deleteReminder"
         />
+        <ActivityLogView v-if="currentTab === 'activity'" />
       </template>
     </main>
 
@@ -61,6 +71,7 @@
       :members="members"
       :columns="columns"
       :shaking="shaking"
+      :current-user="currentUser"
       @close="modals.add = false"
       @submit="addTask"
     />
@@ -77,9 +88,12 @@
       :task="detailTask"
       :members="members"
       :columns="columns"
+      :current-user="currentUser"
       @close="modals.detail = false"
       @toggle-done="toggleDone"
       @delete-task="deleteTask"
+      @edit-task="editTask"
+      @comment-added="onCommentAdded"
     />
     <AddMemberModal
       v-if="currentUser.access === 'admin'"
@@ -104,6 +118,14 @@
       @add-status="addStatus"
       @delete-status="deleteStatus"
     />
+    <NotificationPanel
+      :open="showNotifications"
+      :notifications="notifications"
+      @close="showNotifications = false"
+      @mark-all-read="markAllNotificationsRead"
+      @accept="acceptAssignment"
+      @decline="declineAssignment"
+    />
   </template>
 </template>
 
@@ -119,11 +141,13 @@ import TabBar           from './components/TabBar.vue'
 import BoardView        from './components/BoardView.vue'
 import ListView         from './components/ListView.vue'
 import RemindersView    from './components/RemindersView.vue'
+import ActivityLogView  from './components/ActivityLogView.vue'
 import AddTaskModal     from './components/AddTaskModal.vue'
 import AddReminderModal from './components/AddReminderModal.vue'
 import TaskDetailModal  from './components/TaskDetailModal.vue'
 import AddMemberModal   from './components/AddMemberModal.vue'
 import SettingsSidebar  from './components/SettingsSidebar.vue'
+import NotificationPanel from './components/NotificationPanel.vue'
 
 // ── auth ──────────────────────────────────────────────────────────────────────
 const currentUser  = ref(null)
@@ -145,35 +169,41 @@ async function login({ email, password }) {
     return
   }
   currentUser.value = mapMember(data)
+  localStorage.setItem('squad_user', JSON.stringify(currentUser.value))
   startApp()
 }
 
 function logout() {
-  currentUser.value = null
-  loginError.value  = ''
+  currentUser.value    = null
+  loginError.value     = ''
+  showNotifications.value = false
+  localStorage.removeItem('squad_user')
   stopApp()
-  members.value   = []
-  tasks.value     = []
-  reminders.value = []
-  columns.value   = []
-  loading.value   = true
+  members.value       = []
+  tasks.value         = []
+  reminders.value     = []
+  columns.value       = []
+  notifications.value = []
+  loading.value       = true
 }
 
 // ── state ─────────────────────────────────────────────────────────────────────
-const clock          = ref('--:--:--')
-const currentTab     = ref('board')
-const filterMember   = ref('')
-const filterPriority = ref('')
-const dragTaskId     = ref(null)
-const dragOver       = ref(null)
-const detailTask     = ref(null)
-const loading        = ref(true)
-const showSettings   = ref(false)
+const clock             = ref('--:--:--')
+const currentTab        = ref('board')
+const filterMember      = ref('')
+const filterPriority    = ref('')
+const dragTaskId        = ref(null)
+const dragOver          = ref(null)
+const detailTask        = ref(null)
+const loading           = ref(true)
+const showSettings      = ref(false)
+const showNotifications = ref(false)
 
-const members   = ref([])
-const tasks     = ref([])
-const reminders = ref([])
-const toasts    = ref([])
+const members       = ref([])
+const tasks         = ref([])
+const reminders     = ref([])
+const notifications = ref([])
+const toasts        = ref([])
 
 const modals     = reactive({ add: false, reminder: false, detail: false, member: false })
 const form       = reactive({ title: '', desc: '', assigneeId: '', priority: 'medium', due: '', status: 'todo', reminderDt: '' })
@@ -193,6 +223,7 @@ function mapTask(row) {
     due:        row.due,
     status:     row.status,
     done:       row.done,
+    confirmed:  row.confirmed ?? true,
     createdAt:  row.created_at,
   }
 }
@@ -224,6 +255,19 @@ function mapStatus(row) {
   return { id: row.id, status: row.key, label: row.label, dot: row.dot, sortOrder: row.sort_order }
 }
 
+function mapNotification(row) {
+  return {
+    id:        row.id,
+    memberId:  row.member_id,
+    senderId:  row.sender_id,
+    type:      row.type,
+    message:   row.message,
+    taskId:    row.task_id,
+    read:      row.read,
+    createdAt: row.created_at,
+  }
+}
+
 // ── computed ──────────────────────────────────────────────────────────────────
 const filteredTasks = computed(() => tasks.value.filter(t =>
   (!filterMember.value   || t.assigneeId === filterMember.value) &&
@@ -231,6 +275,7 @@ const filteredTasks = computed(() => tasks.value.filter(t =>
 ))
 
 const pendingReminders = computed(() => reminders.value.filter(r => !r.fired))
+const unreadCount      = computed(() => notifications.value.filter(n => !n.read).length)
 
 const columns = ref([])
 
@@ -253,9 +298,21 @@ async function fetchAll() {
     form.status     = columns.value[0]?.status ?? 'todo'
   }
   loading.value = false
+  await fetchNotifications()
 }
 
-// ── app lifecycle (post-login) ────────────────────────────────────────────────
+async function fetchNotifications() {
+  if (!currentUser.value) return
+  const { data } = await supabase
+    .from('notifications')
+    .select('*')
+    .eq('member_id', currentUser.value.id)
+    .order('created_at', { ascending: false })
+    .limit(50)
+  if (data) notifications.value = data.map(mapNotification)
+}
+
+// ── app lifecycle ─────────────────────────────────────────────────────────────
 let clockInterval, reminderInterval
 
 function startApp() {
@@ -274,6 +331,7 @@ function startApp() {
           await supabase.from('reminders').update({ fired: true }).eq('id', r.id)
         }
       }
+      await fetchNotifications()
     }, 15000)
   })
 }
@@ -287,6 +345,11 @@ function stopApp() {
 
 onMounted(() => {
   clock.value = new Date().toLocaleTimeString('en-US', { hour12: false })
+  const saved = localStorage.getItem('squad_user')
+  if (saved) {
+    currentUser.value = JSON.parse(saved)
+    startApp()
+  }
 })
 
 onUnmounted(() => stopApp())
@@ -299,9 +362,23 @@ function openDetail(task) {
   modals.detail = true
 }
 
+async function logActivity(action, entityType, entityId, message) {
+  await supabase.from('activity_logs').insert({
+    actor_id:    currentUser.value?.id ?? null,
+    action,
+    entity_type: entityType,
+    entity_id:   String(entityId),
+    message,
+  })
+}
+
 async function addTask() {
   if (!form.title.trim())  { triggerShake('taskTitle');    return }
   if (!form.assigneeId)    { triggerShake('taskAssignee'); return }
+
+  const isCrossAssignment = currentUser.value.access === 'user' &&
+                            form.assigneeId !== currentUser.value.id
+  const confirmed = !isCrossAssignment
 
   const { data, error } = await supabase.from('tasks').insert({
     title:       form.title.trim(),
@@ -311,6 +388,7 @@ async function addTask() {
     due:         form.due || null,
     status:      form.status,
     done:        false,
+    confirmed,
   }).select().single()
 
   if (error) { showToast('Error', 'Could not create task', 'red'); return }
@@ -329,9 +407,55 @@ async function addTask() {
     if (!rErr) reminders.value.push(mapReminder(rData))
   }
 
+  if (isCrossAssignment) {
+    await supabase.from('notifications').insert({
+      member_id: form.assigneeId,
+      sender_id: currentUser.value.id,
+      type:      'task_assignment_request',
+      message:   `${currentUser.value.name} wants to assign you a task: "${task.title}"`,
+      task_id:   task.id,
+    })
+    showToast('Task Sent', 'Waiting for assignee to confirm', 'yellow')
+  } else {
+    if (form.assigneeId !== currentUser.value.id) {
+      await supabase.from('notifications').insert({
+        member_id: form.assigneeId,
+        sender_id: currentUser.value.id,
+        type:      'task_assigned',
+        message:   `${currentUser.value.name} assigned you a task: "${task.title}"`,
+        task_id:   task.id,
+      })
+    }
+    showToast('Task Created', task.title, 'yellow')
+  }
+
+  logActivity('task_created', 'task', task.id, `${currentUser.value.name} created task: "${task.title}"`)
+
   modals.add = false
   Object.assign(form, { title: '', desc: '', assigneeId: '', priority: 'medium', due: '', status: columns.value[0]?.status ?? '', reminderDt: '' })
-  showToast('Task Created', task.title, 'yellow')
+}
+
+async function editTask({ id, title, desc, priority, due, status }) {
+  const t = tasks.value.find(t => t.id === id)
+  if (!t) return
+  Object.assign(t, { title, desc, priority, due, status })
+  if (detailTask.value?.id === id) detailTask.value = { ...t }
+  const { error } = await supabase.from('tasks').update({
+    title,
+    description: desc,
+    priority,
+    due:    due || null,
+    status,
+  }).eq('id', id)
+  if (error) showToast('Error', 'Could not update task', 'red')
+  else {
+    showToast('Task Updated', title, 'yellow')
+    logActivity('task_updated', 'task', id, `${currentUser.value.name} updated task: "${title}"`)
+  }
+}
+
+function onCommentAdded({ taskId, taskTitle }) {
+  logActivity('task_commented', 'task', taskId, `${currentUser.value.name} commented on: "${taskTitle}"`)
 }
 
 async function toggleDone(id) {
@@ -349,15 +473,18 @@ async function toggleDone(id) {
     .update({ done: newDone, status: newStatus })
     .eq('id', id)
   if (error) showToast('Error', 'Could not update task', 'red')
+  else logActivity('task_status_changed', 'task', id,
+    `${currentUser.value.name} marked "${t.title}" as ${newDone ? 'done' : 'reopened'}`)
 }
 
 async function deleteTask(id) {
+  const t = tasks.value.find(t => t.id === id)
   tasks.value     = tasks.value.filter(t => t.id !== id)
   reminders.value = reminders.value.filter(r => r.taskId !== id)
   modals.detail   = false
-
   const { error } = await supabase.from('tasks').delete().eq('id', id)
   if (error) showToast('Error', 'Could not delete task', 'red')
+  else logActivity('task_deleted', 'task', id, `${currentUser.value.name} deleted task: "${t?.title ?? id}"`)
 }
 
 async function addReminder() {
@@ -378,6 +505,7 @@ async function addReminder() {
   const title = remForm.title
   Object.assign(remForm, { title: '', taskId: '', datetime: '', assigneeId: 'team' })
   showToast('Reminder Set', title, 'yellow')
+  logActivity('reminder_created', 'reminder', data.id, `${currentUser.value.name} set reminder: "${title}"`)
 }
 
 async function deleteReminder(id) {
@@ -399,13 +527,13 @@ async function addMember() {
   }
 
   const { data, error } = await supabase.from('members').insert(payload).select().single()
-
   if (error) { showToast('Error', 'Could not add member', 'red'); return }
 
   members.value.push(mapMember(data))
   modals.member = false
   showToast('Member Added', `${data.name} joined the team`, 'blue')
   Object.assign(memberForm, { name: '', role: '', email: '', password: '', access: 'user', color: '#e8ff47' })
+  logActivity('member_added', 'member', data.id, `${currentUser.value.name} added member: ${data.name}`)
 }
 
 async function updateMember({ id, name, role, email, password, color, access }) {
@@ -414,7 +542,6 @@ async function updateMember({ id, name, role, email, password, color, access }) 
   const patch = { name, role, color, access, email: email.trim() || null }
   if (password) patch.password = password
   Object.assign(m, patch)
-  // keep currentUser in sync if they updated themselves
   if (currentUser.value?.id === id) Object.assign(currentUser.value, patch)
   const { error } = await supabase.from('members').update(patch).eq('id', id)
   if (error) showToast('Error', 'Could not update member', 'red')
@@ -426,7 +553,10 @@ async function deleteMember(id) {
   members.value = members.value.filter(m => m.id !== id)
   const { error } = await supabase.from('members').delete().eq('id', id)
   if (error) showToast('Error', 'Could not delete member', 'red')
-  else showToast('Member Removed', m?.name ?? '', 'yellow')
+  else {
+    showToast('Member Removed', m?.name ?? '', 'yellow')
+    logActivity('member_deleted', 'member', id, `${currentUser.value.name} removed member: ${m?.name ?? id}`)
+  }
 }
 
 async function updateColumn({ status, label, dot }) {
@@ -468,16 +598,74 @@ async function onDrop(status) {
   if (!dragTaskId.value) return
   const t = tasks.value.find(t => t.id === dragTaskId.value)
   if (!t) return
-  const done = status === 'done'
+  const isDone = status === columns.value.at(-1)?.status
   t.status = status
-  t.done   = done
+  t.done   = isDone
   dragTaskId.value = null
   dragOver.value   = null
 
   const { error } = await supabase.from('tasks')
-    .update({ status, done })
+    .update({ status, done: isDone })
     .eq('id', t.id)
   if (error) showToast('Error', 'Could not move task', 'red')
+  else logActivity('task_status_changed', 'task', t.id,
+    `${currentUser.value.name} moved "${t.title}" to ${status}`)
+}
+
+// ── notifications actions ─────────────────────────────────────────────────────
+async function markAllNotificationsRead() {
+  const unreadIds = notifications.value.filter(n => !n.read).map(n => n.id)
+  if (!unreadIds.length) return
+  notifications.value.forEach(n => { n.read = true })
+  await supabase.from('notifications').update({ read: true }).in('id', unreadIds)
+}
+
+async function acceptAssignment(notif) {
+  const t = tasks.value.find(t => t.id === notif.taskId)
+  if (t) t.confirmed = true
+  await supabase.from('tasks').update({ confirmed: true }).eq('id', notif.taskId)
+  notifications.value = notifications.value.filter(n => n.id !== notif.id)
+  await supabase.from('notifications').delete().eq('id', notif.id)
+
+  if (notif.senderId) {
+    const assigneeName = currentUser.value.name
+    await supabase.from('notifications').insert({
+      member_id: notif.senderId,
+      sender_id: currentUser.value.id,
+      type:      'task_confirmed',
+      message:   `${assigneeName} accepted your task: "${t?.title ?? ''}"`,
+      task_id:   notif.taskId,
+    })
+  }
+
+  showToast('Task Accepted', t?.title ?? '', 'yellow')
+  logActivity('task_confirmed', 'task', notif.taskId,
+    `${currentUser.value.name} accepted task assignment: "${t?.title ?? ''}"`)
+  await fetchNotifications()
+}
+
+async function declineAssignment(notif) {
+  const t = tasks.value.find(t => t.id === notif.taskId)
+  tasks.value     = tasks.value.filter(t => t.id !== notif.taskId)
+  reminders.value = reminders.value.filter(r => r.taskId !== notif.taskId)
+  await supabase.from('tasks').delete().eq('id', notif.taskId)
+  notifications.value = notifications.value.filter(n => n.id !== notif.id)
+  await supabase.from('notifications').delete().eq('id', notif.id)
+
+  if (notif.senderId) {
+    await supabase.from('notifications').insert({
+      member_id: notif.senderId,
+      sender_id: currentUser.value.id,
+      type:      'task_declined',
+      message:   `${currentUser.value.name} declined your task: "${t?.title ?? ''}"`,
+      task_id:   null,
+    })
+  }
+
+  showToast('Task Declined', t?.title ?? '', 'red')
+  logActivity('task_declined', 'task', notif.taskId ?? 'unknown',
+    `${currentUser.value.name} declined task assignment: "${t?.title ?? ''}"`)
+  await fetchNotifications()
 }
 
 // ── toast ─────────────────────────────────────────────────────────────────────
