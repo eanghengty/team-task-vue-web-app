@@ -79,4 +79,29 @@ user action (component event)
   → props re-render BoardView / ListView / StatsBar
 ```
 
-No Vuex/Pinia; no router; no external API calls. All state is in-memory and resets on page reload.
+State is persisted in **Supabase Postgres**. On mount, `fetchAll()` loads all three tables in parallel. Every action (add/update/delete) writes to Supabase; local refs are updated optimistically for instant UI feedback.
+
+### Supabase setup
+
+1. Run `supabase/schema.sql` in your Supabase SQL editor to create the three tables.
+2. Copy `.env.example` → `.env` and fill in `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` from your Supabase project settings.
+3. `.env` is git-ignored — never commit it.
+
+### DB ↔ JS column mapping
+
+Postgres uses snake_case; JS uses camelCase. Three mapper functions in `App.vue` handle the translation:
+
+| Table column | JS field |
+|---|---|
+| `description` | `desc` |
+| `assignee_id` | `assigneeId` |
+| `task_id` | `taskId` |
+| `created_at` | `createdAt` |
+
+### Tables
+
+| Table | Key columns |
+|---|---|
+| `members` | `id uuid`, `name`, `role`, `color` |
+| `tasks` | `id uuid`, `title`, `description`, `assignee_id`, `priority`, `due`, `status`, `done` |
+| `reminders` | `id uuid`, `title`, `task_id`, `datetime`, `assignee_id`, `fired` |
