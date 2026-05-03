@@ -112,7 +112,7 @@ Drives the kanban columns. Fully managed from the Settings sidebar (admin only).
 | `key`        | `text`      | —         | Unique slug stored in `tasks.status` (e.g. `in_review`)      |
 | `label`      | `text`      | —         | Display name shown in the UI (e.g. `In Review`)              |
 | `dot`        | `text`      | `'#888888'` | Hex colour for the status dot and badge                    |
-| `sort_order` | `int`       | `0`       | Column order on the kanban board (ascending)                 |
+| `sort_order` | `int`       | `0`       | Column order on the kanban board (ascending). Updated when admins reorder columns via Settings sidebar. Values are sequential (0, 1, 2, 3...) to avoid constraint violations |
 | `created_at` | `timestamptz` | `now()` | Auto-set on insert                                           |
 
 **Default rows (seeded by migration 003):**
@@ -124,7 +124,7 @@ Drives the kanban columns. Fully managed from the Settings sidebar (admin only).
 | `review` | Review | `#47c5ff` |
 | `done` | Done | `#444444` |
 
-> The **last** row by `sort_order` is treated as the "done" state by `toggleDone`.
+> The **last** row by `sort_order` is treated as the "done" state by `toggleDone`. Columns are always fetched and displayed in ascending order of `sort_order`. Admins can reorder columns using the up/down arrow buttons in the Task Statuses settings tab.
 
 ---
 
