@@ -23,8 +23,8 @@
       </button>
     </div>
 
-    <!-- Tab nav -->
-    <div class="flex gap-1 px-6 py-3 flex-shrink-0" style="border-bottom:1px solid var(--border)">
+    <!-- Tab nav (admin only) -->
+    <div v-if="currentUser.access === 'admin'" class="flex gap-1 px-6 py-3 flex-shrink-0" style="border-bottom:1px solid var(--border)">
       <button class="tab-btn" :class="{ active: activeTab === 'members' }" @click="activeTab = 'members'">
         <span class="material-icons" style="font-size:15px;vertical-align:-3px;margin-right:5px">group</span>
         Members
@@ -38,8 +38,70 @@
     <!-- Scrollable body -->
     <div class="flex-1 overflow-y-auto">
 
-      <!-- ── MEMBERS TAB ──────────────────────────────────────── -->
-      <div v-if="activeTab === 'members'" class="p-6 flex flex-col gap-4">
+      <!-- ── USER: Change Password only ─────────────────────────── -->
+      <div v-if="currentUser.access === 'user'" class="p-6 flex flex-col gap-4">
+        <div>
+          <div class="font-medium text-sm mb-0.5">Change Password</div>
+          <div class="text-xs" style="color:var(--muted)">Update your login password</div>
+        </div>
+
+        <div class="member-row flex flex-col gap-3">
+          <!-- Current user info (read-only) -->
+          <div class="flex items-center gap-3 pb-3" style="border-bottom:1px solid var(--border)">
+            <div class="avatar flex-shrink-0" :style="{ background: currentUser.color, color: '#0d0d0d' }">
+              {{ initials(currentUser.name) }}
+            </div>
+            <div>
+              <div class="font-medium text-sm">{{ currentUser.name }}</div>
+              <div class="text-xs" style="color:var(--muted)">{{ currentUser.email }}</div>
+            </div>
+          </div>
+
+          <div class="relative">
+            <input
+              class="field text-sm pr-10"
+              :type="showNewPw ? 'text' : 'password'"
+              v-model="newPassword"
+              placeholder="New password"
+              @keyup.enter="savePassword"
+            />
+            <button
+              type="button"
+              class="absolute right-3 top-1/2 -translate-y-1/2 flex items-center"
+              style="color:var(--muted)"
+              @click="showNewPw = !showNewPw"
+            >
+              <span class="material-icons" style="font-size:16px">{{ showNewPw ? 'visibility_off' : 'visibility' }}</span>
+            </button>
+          </div>
+          <div class="relative">
+            <input
+              class="field text-sm pr-10"
+              :type="showConfirmPw ? 'text' : 'password'"
+              v-model="confirmPassword"
+              placeholder="Confirm new password"
+              @keyup.enter="savePassword"
+            />
+            <button
+              type="button"
+              class="absolute right-3 top-1/2 -translate-y-1/2 flex items-center"
+              style="color:var(--muted)"
+              @click="showConfirmPw = !showConfirmPw"
+            >
+              <span class="material-icons" style="font-size:16px">{{ showConfirmPw ? 'visibility_off' : 'visibility' }}</span>
+            </button>
+          </div>
+
+          <div v-if="pwError" class="text-xs px-3 py-2 rounded-lg font-mono" style="background:rgba(255,71,71,0.12);color:var(--accent2);border:1px solid rgba(255,71,71,0.25)">
+            {{ pwError }}
+          </div>
+
+          <button class="btn-primary text-xs px-4 py-2" @click="savePassword">Save Password</button>
+        </div>
+      </div>
+
+      <!-- ── MEMBERS TAB (admin) ─────────────────────────────────── -->
+      <div v-if="currentUser.access === 'admin' && activeTab === 'members'" class="p-6 flex flex-col gap-4">
         <div class="flex items-center justify-between">
           <p class="text-xs font-mono" style="color:var(--muted)">{{ members.length }} MEMBER{{ members.length !== 1 ? 'S' : '' }}</p>
           <button class="btn-primary flex items-center gap-1.5 text-xs px-3 py-1.5" @click="$emit('open-add-member')">
@@ -161,8 +223,8 @@
         </div>
       </div>
 
-      <!-- ── TASK STATUSES TAB ───────────────────────────────── -->
-      <div v-if="activeTab === 'statuses'" class="p-6 flex flex-col gap-4">
+      <!-- ── TASK STATUSES TAB (admin) ──────────────────────────── -->
+      <div v-if="currentUser.access === 'admin' && activeTab === 'statuses'" class="p-6 flex flex-col gap-4">
         <div class="flex items-center justify-between">
           <p class="text-xs font-mono" style="color:var(--muted)">{{ columns.length }} STATUSES</p>
           <button class="btn-primary flex items-center gap-1.5 text-xs px-3 py-1.5" @click="showAddStatus = !showAddStatus">
@@ -236,6 +298,7 @@ const props = defineProps({
   columns:      Array,
   tasks:        Array,
   memberColors: Array,
+  currentUser:  Object,
 })
 
 const emit = defineEmits(['close', 'open-add-member', 'update-member', 'delete-member', 'update-status', 'add-status', 'delete-status'])
@@ -247,9 +310,33 @@ const revealPwId       = ref(null)
 const showEditPw       = ref(false)
 const showAddStatus    = ref(false)
 
+// user password change state
+const newPassword     = ref('')
+const confirmPassword = ref('')
+const showNewPw       = ref(false)
+const showConfirmPw   = ref(false)
+const pwError         = ref('')
+
 const editForm       = reactive({ name: '', role: '', email: '', password: '', color: '', access: 'user' })
 const statusEditForm = reactive({ label: '', dot: '' })
 const newStatusForm  = reactive({ label: '', dot: '#47ff8a' })
+
+function savePassword() {
+  pwError.value = ''
+  if (!newPassword.value) { pwError.value = 'Please enter a new password.'; return }
+  if (newPassword.value !== confirmPassword.value) { pwError.value = 'Passwords do not match.'; return }
+  emit('update-member', {
+    id:       props.currentUser.id,
+    name:     props.currentUser.name,
+    role:     props.currentUser.role,
+    email:    props.currentUser.email,
+    password: newPassword.value,
+    color:    props.currentUser.color,
+    access:   props.currentUser.access,
+  })
+  newPassword.value     = ''
+  confirmPassword.value = ''
+}
 
 function slugify(label) {
   return label.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')

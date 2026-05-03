@@ -2,6 +2,15 @@
 
 All notable changes to SQUAD — Team Task Board.
 
+## [3.4.0] — 2026-05-03
+- Login screen added — app requires email + password before access.
+- `currentUser` ref in `App.vue`; login queries `members` table by email/password.
+- Role-based UI: `admin` has full access; `user` can add tasks but cannot add members or manage task statuses.
+- Settings sidebar for `user` role shows only a Change Password form.
+- `AddMemberModal` hidden for `user` role.
+- `AppHeader` shows current user avatar, name, and logout button.
+- `LoginView.vue` component added.
+
 ## [3.3.0] — 2026-05-03
 
 ### Changed

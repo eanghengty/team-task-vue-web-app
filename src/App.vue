@@ -1,103 +1,117 @@
 <template>
-  <AppHeader :clock="clock" @open-modal="openModal" @open-settings="showSettings = true" />
-  <ToastContainer :toasts="toasts" @remove="removeToast" />
-  <StatsBar :tasks="tasks" :members="members" @open-modal="openModal" />
-  <TabBar
-    v-model:currentTab="currentTab"
-    v-model:filterMember="filterMember"
-    v-model:filterPriority="filterPriority"
-    :members="members"
-    :pending-count="pendingReminders.length"
+  <!-- Login screen -->
+  <LoginView
+    v-if="!currentUser"
+    :error="loginError"
+    :loading="loginLoading"
+    @login="login"
   />
 
-  <main class="p-6">
-    <div v-if="loading" class="flex items-center justify-center py-24">
-      <span class="material-icons animate-spin" style="color:var(--muted);font-size:32px">refresh</span>
-    </div>
-    <template v-else>
-      <BoardView v-if="currentTab === 'board'"
-        :columns="columns"
-        :filtered-tasks="filteredTasks"
-        :members="members"
-        :reminders="reminders"
-        :drag-over="dragOver"
-        v-model:dragOver="dragOver"
-        v-model:dragTaskId="dragTaskId"
-        @drop="onDrop"
-        @open-detail="openDetail"
-        @toggle-done="toggleDone"
-      />
-      <ListView v-if="currentTab === 'list'"
-        :tasks="filteredTasks"
-        :members="members"
-        :columns="columns"
-        @open-detail="openDetail"
-        @toggle-done="toggleDone"
-        @delete-task="deleteTask"
-      />
-      <RemindersView v-if="currentTab === 'reminders'"
-        :reminders="reminders"
-        :tasks="tasks"
-        :members="members"
-        @open-modal="openModal"
-        @delete-reminder="deleteReminder"
-      />
-    </template>
-  </main>
+  <!-- App -->
+  <template v-else>
+    <AppHeader :clock="clock" :current-user="currentUser" @open-modal="openModal" @open-settings="showSettings = true" @logout="logout" />
+    <ToastContainer :toasts="toasts" @remove="removeToast" />
+    <StatsBar :tasks="tasks" :members="members" @open-modal="openModal" />
+    <TabBar
+      v-model:currentTab="currentTab"
+      v-model:filterMember="filterMember"
+      v-model:filterPriority="filterPriority"
+      :members="members"
+      :pending-count="pendingReminders.length"
+    />
 
-  <AddTaskModal
-    :open="modals.add"
-    :form="form"
-    :members="members"
-    :columns="columns"
-    :shaking="shaking"
-    @close="modals.add = false"
-    @submit="addTask"
-  />
-  <AddReminderModal
-    :open="modals.reminder"
-    :form="remForm"
-    :tasks="tasks"
-    :members="members"
-    @close="modals.reminder = false"
-    @submit="addReminder"
-  />
-  <TaskDetailModal
-    :open="modals.detail"
-    :task="detailTask"
-    :members="members"
-    :columns="columns"
-    @close="modals.detail = false"
-    @toggle-done="toggleDone"
-    @delete-task="deleteTask"
-  />
-  <AddMemberModal
-    :open="modals.member"
-    :form="memberForm"
-    :colors="memberColors"
-    @close="modals.member = false"
-    @submit="addMember"
-  />
-  <SettingsSidebar
-    :open="showSettings"
-    :members="members"
-    :columns="columns"
-    :tasks="tasks"
-    :member-colors="memberColors"
-    @close="showSettings = false"
-    @open-add-member="openModal('member')"
-    @update-member="updateMember"
-    @delete-member="deleteMember"
-    @update-status="updateColumn"
-    @add-status="addStatus"
-    @delete-status="deleteStatus"
-  />
+    <main class="p-6">
+      <div v-if="loading" class="flex items-center justify-center py-24">
+        <span class="material-icons animate-spin" style="color:var(--muted);font-size:32px">refresh</span>
+      </div>
+      <template v-else>
+        <BoardView v-if="currentTab === 'board'"
+          :columns="columns"
+          :filtered-tasks="filteredTasks"
+          :members="members"
+          :reminders="reminders"
+          :drag-over="dragOver"
+          v-model:dragOver="dragOver"
+          v-model:dragTaskId="dragTaskId"
+          @drop="onDrop"
+          @open-detail="openDetail"
+          @toggle-done="toggleDone"
+        />
+        <ListView v-if="currentTab === 'list'"
+          :tasks="filteredTasks"
+          :members="members"
+          :columns="columns"
+          @open-detail="openDetail"
+          @toggle-done="toggleDone"
+          @delete-task="deleteTask"
+        />
+        <RemindersView v-if="currentTab === 'reminders'"
+          :reminders="reminders"
+          :tasks="tasks"
+          :members="members"
+          @open-modal="openModal"
+          @delete-reminder="deleteReminder"
+        />
+      </template>
+    </main>
+
+    <AddTaskModal
+      :open="modals.add"
+      :form="form"
+      :members="members"
+      :columns="columns"
+      :shaking="shaking"
+      @close="modals.add = false"
+      @submit="addTask"
+    />
+    <AddReminderModal
+      :open="modals.reminder"
+      :form="remForm"
+      :tasks="tasks"
+      :members="members"
+      @close="modals.reminder = false"
+      @submit="addReminder"
+    />
+    <TaskDetailModal
+      :open="modals.detail"
+      :task="detailTask"
+      :members="members"
+      :columns="columns"
+      @close="modals.detail = false"
+      @toggle-done="toggleDone"
+      @delete-task="deleteTask"
+    />
+    <AddMemberModal
+      v-if="currentUser.access === 'admin'"
+      :open="modals.member"
+      :form="memberForm"
+      :colors="memberColors"
+      @close="modals.member = false"
+      @submit="addMember"
+    />
+    <SettingsSidebar
+      :open="showSettings"
+      :members="members"
+      :columns="columns"
+      :tasks="tasks"
+      :member-colors="memberColors"
+      :current-user="currentUser"
+      @close="showSettings = false"
+      @open-add-member="openModal('member')"
+      @update-member="updateMember"
+      @delete-member="deleteMember"
+      @update-status="updateColumn"
+      @add-status="addStatus"
+      @delete-status="deleteStatus"
+    />
+  </template>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { uid, labelToKey } from './utils.js'
 import { supabase } from './lib/supabase.js'
+import LoginView        from './components/LoginView.vue'
 import AppHeader        from './components/AppHeader.vue'
 import ToastContainer   from './components/ToastContainer.vue'
 import StatsBar         from './components/StatsBar.vue'
@@ -110,6 +124,40 @@ import AddReminderModal from './components/AddReminderModal.vue'
 import TaskDetailModal  from './components/TaskDetailModal.vue'
 import AddMemberModal   from './components/AddMemberModal.vue'
 import SettingsSidebar  from './components/SettingsSidebar.vue'
+
+// ── auth ──────────────────────────────────────────────────────────────────────
+const currentUser  = ref(null)
+const loginError   = ref('')
+const loginLoading = ref(false)
+
+async function login({ email, password }) {
+  loginError.value   = ''
+  loginLoading.value = true
+  const { data, error } = await supabase
+    .from('members')
+    .select('*')
+    .eq('email', email)
+    .eq('password', password)
+    .single()
+  loginLoading.value = false
+  if (error || !data) {
+    loginError.value = 'Incorrect email or password.'
+    return
+  }
+  currentUser.value = mapMember(data)
+  startApp()
+}
+
+function logout() {
+  currentUser.value = null
+  loginError.value  = ''
+  stopApp()
+  members.value   = []
+  tasks.value     = []
+  reminders.value = []
+  columns.value   = []
+  loading.value   = true
+}
 
 // ── state ─────────────────────────────────────────────────────────────────────
 const clock          = ref('--:--:--')
@@ -172,6 +220,10 @@ function mapMember(row) {
   }
 }
 
+function mapStatus(row) {
+  return { id: row.id, status: row.key, label: row.label, dot: row.dot, sortOrder: row.sort_order }
+}
+
 // ── computed ──────────────────────────────────────────────────────────────────
 const filteredTasks = computed(() => tasks.value.filter(t =>
   (!filterMember.value   || t.assigneeId === filterMember.value) &&
@@ -181,11 +233,6 @@ const filteredTasks = computed(() => tasks.value.filter(t =>
 const pendingReminders = computed(() => reminders.value.filter(r => !r.fired))
 
 const columns = ref([])
-
-// ── mappers ───────────────────────────────────────────────────────────────────
-function mapStatus(row) {
-  return { id: row.id, status: row.key, label: row.label, dot: row.dot, sortOrder: row.sort_order }
-}
 
 // ── data fetching ─────────────────────────────────────────────────────────────
 async function fetchAll() {
@@ -207,6 +254,42 @@ async function fetchAll() {
   }
   loading.value = false
 }
+
+// ── app lifecycle (post-login) ────────────────────────────────────────────────
+let clockInterval, reminderInterval
+
+function startApp() {
+  clockInterval = setInterval(() => {
+    clock.value = new Date().toLocaleTimeString('en-US', { hour12: false })
+  }, 1000)
+  clock.value = new Date().toLocaleTimeString('en-US', { hour12: false })
+
+  fetchAll().then(() => {
+    reminderInterval = setInterval(async () => {
+      const now = new Date()
+      for (const r of reminders.value) {
+        if (!r.fired && new Date(r.datetime) <= now) {
+          r.fired = true
+          showToast('Reminder', r.title, 'yellow', 8000)
+          await supabase.from('reminders').update({ fired: true }).eq('id', r.id)
+        }
+      }
+    }, 15000)
+  })
+}
+
+function stopApp() {
+  clearInterval(clockInterval)
+  clearInterval(reminderInterval)
+  clockInterval = null
+  reminderInterval = null
+}
+
+onMounted(() => {
+  clock.value = new Date().toLocaleTimeString('en-US', { hour12: false })
+})
+
+onUnmounted(() => stopApp())
 
 // ── actions ───────────────────────────────────────────────────────────────────
 function openModal(type) { modals[type] = true }
@@ -307,11 +390,11 @@ async function addMember() {
   if (!memberForm.name.trim()) return
 
   const payload = {
-    name:   memberForm.name.trim(),
-    role:   memberForm.role.trim() || 'Team Member',
-    color:  memberForm.color,
-    access: memberForm.access,
-    email:  memberForm.email.trim() || null,
+    name:     memberForm.name.trim(),
+    role:     memberForm.role.trim() || 'Team Member',
+    color:    memberForm.color,
+    access:   memberForm.access,
+    email:    memberForm.email.trim() || null,
     password: memberForm.password || null,
   }
 
@@ -331,6 +414,8 @@ async function updateMember({ id, name, role, email, password, color, access }) 
   const patch = { name, role, color, access, email: email.trim() || null }
   if (password) patch.password = password
   Object.assign(m, patch)
+  // keep currentUser in sync if they updated themselves
+  if (currentUser.value?.id === id) Object.assign(currentUser.value, patch)
   const { error } = await supabase.from('members').update(patch).eq('id', id)
   if (error) showToast('Error', 'Could not update member', 'red')
   else showToast('Member Updated', name, 'blue')
@@ -415,32 +500,4 @@ function triggerShake(key) {
   shaking[key] = true
   setTimeout(() => { shaking[key] = false }, 400)
 }
-
-// ── clock + reminder checker ──────────────────────────────────────────────────
-let clockInterval, reminderInterval
-
-onMounted(async () => {
-  clockInterval = setInterval(() => {
-    clock.value = new Date().toLocaleTimeString('en-US', { hour12: false })
-  }, 1000)
-  clock.value = new Date().toLocaleTimeString('en-US', { hour12: false })
-
-  await fetchAll()
-
-  reminderInterval = setInterval(async () => {
-    const now = new Date()
-    for (const r of reminders.value) {
-      if (!r.fired && new Date(r.datetime) <= now) {
-        r.fired = true
-        showToast('Reminder', r.title, 'yellow', 8000)
-        await supabase.from('reminders').update({ fired: true }).eq('id', r.id)
-      }
-    }
-  }, 15000)
-})
-
-onUnmounted(() => {
-  clearInterval(clockInterval)
-  clearInterval(reminderInterval)
-})
 </script>

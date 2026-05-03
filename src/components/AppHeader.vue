@@ -20,11 +20,27 @@
         <span class="material-icons" style="font-size:16px">settings</span>
         Settings
       </button>
+      <div class="w-px h-5" style="background:var(--border)"></div>
+      <!-- Current user chip -->
+      <div class="flex items-center gap-2">
+        <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+          :style="{ background: currentUser.color, color: '#0d0d0d' }">
+          {{ initials(currentUser.name) }}
+        </div>
+        <span class="text-sm font-medium hidden sm:block" style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ currentUser.name }}</span>
+      </div>
+      <button @click="$emit('logout')" class="btn-ghost flex items-center gap-1.5" title="Sign out">
+        <span class="material-icons" style="font-size:16px">logout</span>
+      </button>
     </div>
   </header>
 </template>
 
 <script setup>
-defineProps({ clock: String })
-defineEmits(['open-modal', 'open-settings'])
+defineProps({ clock: String, currentUser: Object })
+defineEmits(['open-modal', 'open-settings', 'logout'])
+
+function initials(name) {
+  return (name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+}
 </script>
