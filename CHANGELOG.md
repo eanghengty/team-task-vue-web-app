@@ -2,6 +2,13 @@
 
 All notable changes to SQUAD — Team Task Board.
 
+## [3.0.1] — 2026-05-03
+
+### Fixed
+- **401 Unauthorized on Supabase requests** — caused by pasting the wrong key type into `VITE_SUPABASE_ANON_KEY`. The correct key is the `anon public` JWT from Supabase → Project Settings → API. It starts with `eyJ` and is ~200 characters long. The `sb_secret_...` format is not a valid anon key.
+
+---
+
 ## [3.0.0] — 2026-05-03
 
 ### Changed

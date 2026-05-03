@@ -84,7 +84,7 @@ State is persisted in **Supabase Postgres**. On mount, `fetchAll()` loads all th
 ### Supabase setup
 
 1. Run `supabase/schema.sql` in your Supabase SQL editor to create the three tables.
-2. Copy `.env.example` → `.env` and fill in `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` from your Supabase project settings.
+2. Copy `.env.example` → `.env` and fill in `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` from your Supabase project settings. The anon key must be the **`anon public`** JWT (starts with `eyJ`, ~200 chars) — not the `sb_secret_...` format which causes 401 errors.
 3. `.env` is git-ignored — never commit it.
 
 ### DB ↔ JS column mapping
