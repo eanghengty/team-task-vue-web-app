@@ -42,15 +42,6 @@
           {{ unreadCount > 99 ? '99+' : unreadCount }}
         </span>
       </button>
-      <button @click="$emit('open-chat')" class="btn-ghost flex items-center gap-1.5 relative" title="Workspace Chat">
-        <span class="material-icons" style="font-size:18px">chat</span>
-        <span v-if="chatUnreadCount > 0"
-          class="absolute flex items-center justify-center font-mono font-bold"
-          style="top:-4px;right:-4px;min-width:16px;height:16px;padding:0 3px;border-radius:8px;font-size:9px;background:var(--accent3);color:#fff">
-          {{ chatUnreadCount > 99 ? '99+' : chatUnreadCount }}
-        </span>
-      </button>
-
       <div class="w-px h-5" style="background:var(--border)"></div>
 
       <!-- current user chip -->
@@ -76,14 +67,12 @@ defineProps({
   clock: String,
   currentUser: Object,
   unreadCount: Number,
-  chatUnreadCount: Number,
   workspaces: Array,
   currentWorkspaceId: String,
 })
 defineEmits([
   'open-modal',
   'open-settings',
-  'open-chat',
   'open-notifications',
   'logout',
   'select-workspace',

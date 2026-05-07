@@ -244,13 +244,17 @@ The app uses a simple custom auth layer â€” **no Supabase Auth**. Credentia
 ### ChatView
 
 - Workspace-scoped group chat view rendered when `currentTab === 'chat'`.
-- Accepts `messages` and `members` props.
-- Emits `send-message` and `mark-read`.
+- Accepts `messages`, `members`, and `currentUser` props.
+- Emits `send-message`, `mark-read`, `delete-message`, and `delete-all-messages`.
 - Composer trims input, supports Enter-to-send, and enforces max length 2000 characters.
 - Includes compact message replies:
   - each message has a `Reply` action
   - composer shows a compact "Replying to â€¦" bar with cancel
   - replied messages render compact parent-message preview in the timeline
+- Admin moderation:
+  - admins can delete individual messages
+  - admins can delete all chat messages in the current workspace
+  - destructive actions require confirmation prompts
 
 ### SettingsSidebar
 
@@ -318,7 +322,13 @@ user action (component event)
 State is persisted in **Supabase Postgres**. See [SUPABASE.md](./SUPABASE.md) for full database documentation.
 
 
-### Latest updates (v3.12.3)
+### Latest updates (v3.12.4)
+
+- Added admin-only chat moderation actions in `ChatView`: delete one message and delete all workspace messages.
+- Added `App.vue` handlers `deleteWorkspaceMessage` and `deleteAllWorkspaceMessages` with admin permission guards, optimistic rollback, and activity logs.
+- Added realtime `DELETE` sync for `workspace_messages` so all connected members see chat deletions immediately.
+
+### Previous updates (v3.12.3)
 
 - Added compact chat reply UI and reply threading support in `ChatView`.
 - Added DB migration `008_workspace_chat_replies.sql` and schema support for `workspace_messages.reply_to_message_id`.

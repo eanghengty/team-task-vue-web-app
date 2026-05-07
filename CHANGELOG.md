@@ -2,6 +2,20 @@
 
 All notable changes to SQUAD â€” Team Task Board.
 
+## [3.12.4] - 2026-05-07
+
+### Added
+- **Admin chat moderation** in workspace chat:
+  - delete single message
+  - delete all messages in current workspace
+- Admin-only controls in chat UI with confirmation prompts.
+
+### Changed
+- Chat realtime sync now handles `workspace_messages` `DELETE` events so removals appear instantly for all connected members.
+- Chat delete actions use optimistic local updates with rollback on failure.
+
+---
+
 ## [3.12.3] - 2026-05-07
 
 ### Added

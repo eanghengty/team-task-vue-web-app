@@ -24,12 +24,10 @@
       :clock="clock"
       :current-user="currentUser"
       :unread-count="unreadCount"
-      :chat-unread-count="chatUnreadCount"
       :workspaces="workspaces"
       :current-workspace-id="currentWorkspaceId"
       @open-modal="openModal"
       @open-settings="showSettings = true"
-      @open-chat="currentTab = 'chat'"
       @open-notifications="showNotifications = !showNotifications"
       @select-workspace="selectWorkspace"
       @open-workspace-modal="modals.workspace = true"
@@ -77,8 +75,11 @@
         <ChatView v-if="currentTab === 'chat'"
           :messages="chatMessages"
           :members="members"
+          :current-user="currentUser"
           @send-message="sendWorkspaceMessage"
           @mark-read="markChatRead"
+          @delete-message="deleteWorkspaceMessage"
+          @delete-all-messages="deleteAllWorkspaceMessages"
         />
         <RemindersView v-if="currentTab === 'reminders'"
           :reminders="reminders"
@@ -512,9 +513,14 @@ async function notifyAdmins(type, message, taskId) {
 
 async function notifyWorkspaceMembers(type, message, workspaceId, senderId) {
   if (!workspaceId) return
+  const { data: rows } = await supabase
+    .from('workspace_members')
+    .select('member_id')
+    .eq('workspace_id', workspaceId)
+
   const memberIds = [...new Set(
-    workspaceMembers.value
-      .map(wm => wm.member_id)
+    (rows ?? [])
+      .map(row => row.member_id)
       .filter(Boolean)
       .filter(id => id !== senderId)
   )]
@@ -599,8 +605,21 @@ function startRealtimeSync() {
       event: 'INSERT', schema: 'public', table: 'workspace_messages',
       filter: `workspace_id=eq.${currentWorkspaceId.value}`,
     }, ({ new: row }) => {
+      const mapped = mapChatMessage(row)
       if (!chatMessages.value.find(m => m.id === row.id)) {
-        chatMessages.value.push(mapChatMessage(row))
+        chatMessages.value.push(mapped)
+      }
+      if (mapped.senderId && mapped.senderId !== currentUser.value?.id) {
+        const senderName = members.value.find(m => m.id === mapped.senderId)?.name ?? 'Someone'
+        showToast('New Message', `${senderName} - New message`, 'blue', 5000)
+      }
+    })
+    .on('postgres_changes', {
+      event: 'DELETE', schema: 'public', table: 'workspace_messages',
+      filter: `workspace_id=eq.${currentWorkspaceId.value}`,
+    }, ({ old: row }) => {
+      if (row?.id) {
+        chatMessages.value = chatMessages.value.filter(m => m.id !== row.id)
       }
     })
     .subscribe((status, err) => {
@@ -1240,6 +1259,47 @@ async function sendWorkspaceMessage(payload) {
   )
   await markChatRead()
   await logActivity('chat_message_sent', 'workspace_message', mapped.id, `${currentUser.value.name} sent a chat message`)
+}
+
+async function deleteWorkspaceMessage(messageId) {
+  if (!canAccessCurrentWorkspace()) return
+  if (currentUser.value?.access !== 'admin') {
+    showToast('Permission Denied', 'Only admins can delete chat messages', 'red')
+    return
+  }
+  if (!messageId) return
+
+  const previous = [...chatMessages.value]
+  chatMessages.value = chatMessages.value.filter(m => m.id !== messageId)
+  const { error } = await supabase.from('workspace_messages').delete().eq('id', messageId)
+  if (error) {
+    chatMessages.value = previous
+    showToast('Error', 'Could not delete chat message', 'red')
+    return
+  }
+  showToast('Message Deleted', 'Chat message removed', 'yellow')
+  await logActivity('chat_message_deleted', 'workspace_message', messageId, `${currentUser.value.name} deleted a chat message`)
+}
+
+async function deleteAllWorkspaceMessages() {
+  if (!canAccessCurrentWorkspace()) return
+  if (currentUser.value?.access !== 'admin') {
+    showToast('Permission Denied', 'Only admins can delete all chat messages', 'red')
+    return
+  }
+  if (!chatMessages.value.length) return
+
+  const removedCount = chatMessages.value.length
+  const previous = [...chatMessages.value]
+  chatMessages.value = []
+  const { error } = await supabase.from('workspace_messages').delete().eq('workspace_id', currentWorkspaceId.value)
+  if (error) {
+    chatMessages.value = previous
+    showToast('Error', 'Could not delete all chat messages', 'red')
+    return
+  }
+  showToast('Chat Cleared', `${removedCount} messages deleted`, 'yellow')
+  await logActivity('chat_messages_deleted_all', 'workspace', currentWorkspaceId.value, `${currentUser.value.name} deleted all chat messages`)
 }
 
 async function markChatRead() {

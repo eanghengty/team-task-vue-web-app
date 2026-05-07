@@ -5,6 +5,14 @@
         <h2 class="font-display tracking-wide text-xl" style="color:var(--accent)">Workspace Chat</h2>
         <p class="text-xs" style="color:var(--muted)">Messages are visible to all members in this workspace.</p>
       </div>
+      <button
+        v-if="isAdmin && messages.length"
+        class="btn-ghost text-xs px-2 py-1"
+        style="color:var(--accent2);border-color:rgba(255,71,71,0.35)"
+        @click="confirmDeleteAll"
+      >
+        Delete All
+      </button>
     </div>
 
     <div ref="listRef" class="px-4 py-4 space-y-3 overflow-y-auto" style="max-height:52vh">
@@ -38,8 +46,16 @@
         </div>
 
         <p class="text-sm whitespace-pre-wrap break-words">{{ msg.content }}</p>
-        <div class="mt-2">
+        <div class="mt-2 flex items-center gap-2">
           <button class="btn-ghost text-xs px-2 py-1" @click="setReplyTarget(msg)">Reply</button>
+          <button
+            v-if="isAdmin"
+            class="btn-ghost text-xs px-2 py-1"
+            style="color:var(--accent2);border-color:rgba(255,71,71,0.35)"
+            @click="confirmDeleteMessage(msg.id)"
+          >
+            Delete
+          </button>
         </div>
       </article>
     </div>
@@ -76,17 +92,19 @@
 </template>
 
 <script setup>
-import { nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 
 const props = defineProps({
   messages: { type: Array, default: () => [] },
   members: { type: Array, default: () => [] },
+  currentUser: { type: Object, default: null },
 })
 
-const emit = defineEmits(['send-message', 'mark-read'])
+const emit = defineEmits(['send-message', 'mark-read', 'delete-message', 'delete-all-messages'])
 const draft = ref('')
 const listRef = ref(null)
 const replyTarget = ref(null)
+const isAdmin = computed(() => props.currentUser?.access === 'admin')
 
 function memberName(senderId) {
   return props.members.find(m => m.id === senderId)?.name ?? 'Unknown Member'
@@ -127,6 +145,20 @@ function setReplyTarget(msg) {
 
 function clearReply() {
   replyTarget.value = null
+}
+
+function confirmDeleteMessage(messageId) {
+  if (!isAdmin.value) return
+  if (window.confirm('Delete this chat message?')) {
+    emit('delete-message', messageId)
+  }
+}
+
+function confirmDeleteAll() {
+  if (!isAdmin.value) return
+  if (window.confirm('Delete all chat messages in this workspace? This cannot be undone.')) {
+    emit('delete-all-messages')
+  }
 }
 
 function replyContext(msg) {
