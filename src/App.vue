@@ -514,14 +514,13 @@ async function fetchWorkspaceData(workspaceId) {
 }
 
 async function fetchNotifications() {
-  if (!currentUser.value || !currentWorkspaceId.value) return
+  if (!currentUser.value) return
   const { data } = await supabase
     .from('notifications')
     .select('*')
     .eq('member_id', currentUser.value.id)
-    .eq('workspace_id', currentWorkspaceId.value)
     .order('created_at', { ascending: false })
-    .limit(50)
+    .limit(200)
   if (data) notifications.value = data.map(mapNotification)
 }
 
@@ -690,20 +689,23 @@ function startRealtimeSync() {
     .channel('db-notifications')
     .on('postgres_changes', {
       event: 'INSERT', schema: 'public', table: 'notifications',
-      filter: `member_id=eq.${currentUser.value.id},workspace_id=eq.${currentWorkspaceId.value}`,
+      filter: `member_id=eq.${currentUser.value.id}`,
     }, ({ new: row }) => {
       if (!notifications.value.find(n => n.id === row.id)) {
         const notif = mapNotification(row)
         notifications.value.unshift(notif)
-        if (notifications.value.length > 50) notifications.value = notifications.value.slice(0, 50)
+        if (notifications.value.length > 200) notifications.value = notifications.value.slice(0, 200)
         if (notif.type === 'chat_message') {
           showToast('New Message', notif.message, 'blue', 5000)
+        }
+        if (notif.type === 'task_assigned' || notif.type === 'task_assignment_request') {
+          showToast('New Notification', notif.message, 'blue', 5000)
         }
       }
     })
     .on('postgres_changes', {
       event: 'UPDATE', schema: 'public', table: 'notifications',
-      filter: `member_id=eq.${currentUser.value.id},workspace_id=eq.${currentWorkspaceId.value}`,
+      filter: `member_id=eq.${currentUser.value.id}`,
     }, ({ new: row }) => {
       const idx = notifications.value.findIndex(n => n.id === row.id)
       if (idx !== -1) notifications.value[idx] = mapNotification(row)

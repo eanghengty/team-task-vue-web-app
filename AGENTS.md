@@ -132,7 +132,7 @@ The app uses a simple custom auth layer — **no Supabase Auth**. Credentials ar
 | `startApp()` | Starts clock interval, calls `fetchAll()`, then calls `startRealtimeSync()` and starts reminder interval |
 | `stopApp()` | Clears clock and reminder intervals; calls `stopRealtimeSync()` |
 | `fetchAll()` | Loads members, tasks, reminders, task_statuses, notifications in parallel (one-time snapshot on login) |
-| `fetchNotifications()` | Fetches last 50 notifications for `currentUser`; called once in `fetchAll` only |
+| `fetchNotifications()` | Fetches latest notifications for `currentUser` across all workspaces (up to 200); called during workspace data hydration |
 | `fetchWorkspaceMessages(workspaceId)` | Fetches latest 100 workspace chat messages (DESC in DB), then reverses client-side for oldest ? newest rendering |
 | `fetchChatReadState(workspaceId, memberId)` | Fetches chat read cursor (`last_read_at`) for unread count calculation |
 | `fetchMotivationQuotes()` | Fetches motivational quotes from `motivational_quotes` table |
@@ -314,7 +314,9 @@ The app uses a simple custom auth layer — **no Supabase Auth**. Credentials ar
 - **Chat** — workspace group chat is realtime via `workspace_messages`; unread count is computed from `workspace_chat_reads.last_read_at` and excludes self-sent messages.
 - **Chat hydration fallback** — entering Chat tab triggers a fresh message + read-state fetch so members can always see history even if realtime misses prior inserts.
 - **Chat notifications** — each new chat/reply sends a `chat_message` notification to all other workspace members; recipients see a top-right popup for 5s with `<username> - New message` (no message content).
+- **Assignment notifications popup** — recipients now also see a top-right popup for 5s on `task_assigned` and `task_assignment_request`.
 - **Realtime sync** — after workspace selection, `startRealtimeSync()` opens three Realtime channels: tasks, notifications, and workspace chat messages. Requires `tasks`, `notifications`, and `workspace_messages` to be in `supabase_realtime`.
+- **Global unread badge scope** — bell unread count is now fed by notifications for the current user across all workspaces (not only active workspace).
 - **Reload hydration** — when a saved workspace exists, startup now fetches full workspace data and starts realtime immediately (without requiring a manual workspace switch).
 - **Task assignment loading** — task creation now enforces a minimum 7-second loading state with Lottie animation before modal closes.
 - **Motivational quote loading text** — assignment loading overlay shows only a motivational quote (no "Assigning task..." text), randomized from Supabase quotes when available.
@@ -337,7 +339,13 @@ user action (component event)
 
 State is persisted in **Supabase Postgres**. See [SUPABASE.md](./SUPABASE.md) for full database documentation.
 
-### Latest updates (v3.12.7)
+### Latest updates (v3.12.8)
+
+- Fixed notification realtime filter for per-user subscription (`member_id` only), resolving missed notification inserts that previously required reload to update the bell badge.
+- Updated notification fetch and local cache sizing to global user scope (all workspaces, latest 200).
+- Added 5-second top-right popup for `task_assigned` and `task_assignment_request`, matching chat popup timing.
+
+### Previous updates (v3.12.7)
 
 - Added done-transition loading UX: mark-done and drag-to-done now use a minimum 7-second loading state with Lottie and motivational quote.
 - Done loading quote source matches assignment flow (Supabase `motivational_quotes` first, fallback quote pool).

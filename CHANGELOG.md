@@ -2,6 +2,20 @@
 
 All notable changes to SQUAD — Team Task Board.
 
+## [3.12.8] - 2026-05-07
+
+### Fixed
+- **Notification bell realtime bug:** assignees now receive unread badge updates immediately without page reload after task assignment notifications arrive.
+- Corrected Supabase notification realtime filter to per-user scope (`member_id` only), removing the malformed combined filter that could miss inserts.
+
+### Changed
+- Notification fetch scope is now **global per current user** (all workspaces) and retains the latest 200 rows in memory for consistent unread badge behavior.
+- Added 5-second top-right popup (same timing/style as chat popup) for assignment-related notifications:
+  - `task_assigned`
+  - `task_assignment_request`
+
+---
+
 ## [3.12.7] - 2026-05-07
 
 ### Added
