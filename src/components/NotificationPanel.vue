@@ -83,6 +83,7 @@ function iconName(type) {
     task_reopen_declined:   'cancel',
     task_marked_done:       'task_alt',
     task_reopened:          'replay',
+    chat_message:           'chat',
   }
   return map[type] ?? 'info'
 }
@@ -98,6 +99,7 @@ function iconColor(type) {
   if (type === 'task_status_changed')     return 'var(--accent3)'
   if (type === 'task_marked_done')        return 'var(--accent3)'
   if (type === 'task_reopened')           return 'var(--accent3)'
+  if (type === 'chat_message')            return 'var(--accent3)'
   return 'var(--accent3)'
 }
 

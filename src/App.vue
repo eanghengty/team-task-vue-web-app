@@ -349,6 +349,7 @@ function mapChatMessage(row) {
     workspaceId: row.workspace_id,
     senderId: row.sender_id,
     content: row.content,
+    replyToMessageId: row.reply_to_message_id ?? null,
     createdAt: row.created_at,
   }
 }
@@ -509,6 +510,28 @@ async function notifyAdmins(type, message, taskId) {
   )
 }
 
+async function notifyWorkspaceMembers(type, message, workspaceId, senderId) {
+  if (!workspaceId) return
+  const memberIds = [...new Set(
+    workspaceMembers.value
+      .map(wm => wm.member_id)
+      .filter(Boolean)
+      .filter(id => id !== senderId)
+  )]
+  if (!memberIds.length) return
+
+  await supabase.from('notifications').insert(
+    memberIds.map(id => ({
+      member_id: id,
+      sender_id: senderId,
+      workspace_id: workspaceId,
+      type,
+      message,
+      task_id: null,
+    }))
+  )
+}
+
 // ── app lifecycle ─────────────────────────────────────────────────────────────
 let clockInterval, reminderInterval, taskChannel, notifChannel, chatChannel
 
@@ -547,8 +570,12 @@ function startRealtimeSync() {
       filter: `member_id=eq.${currentUser.value.id},workspace_id=eq.${currentWorkspaceId.value}`,
     }, ({ new: row }) => {
       if (!notifications.value.find(n => n.id === row.id)) {
-        notifications.value.unshift(mapNotification(row))
+        const notif = mapNotification(row)
+        notifications.value.unshift(notif)
         if (notifications.value.length > 50) notifications.value = notifications.value.slice(0, 50)
+        if (notif.type === 'chat_message') {
+          showToast('New Message', notif.message, 'blue', 5000)
+        }
       }
     })
     .on('postgres_changes', {
@@ -1155,20 +1182,49 @@ async function onDrop(status) {
   }
 }
 
-async function sendWorkspaceMessage(content) {
+async function sendWorkspaceMessage(payload) {
   if (!canAccessCurrentWorkspace()) return
-  const text = content?.trim() ?? ''
+  const text = typeof payload === 'string'
+    ? payload.trim()
+    : (payload?.content?.trim() ?? '')
+  const replyToMessageId = typeof payload === 'string'
+    ? null
+    : (payload?.replyToMessageId ?? null)
   if (!text) return
   if (text.length > 2000) {
     showToast('Message Too Long', 'Chat messages can be up to 2000 characters', 'red')
     return
   }
 
-  const { data, error } = await supabase.from('workspace_messages').insert({
+  const insertPayload = {
     workspace_id: currentWorkspaceId.value,
     sender_id: currentUser.value.id,
     content: text,
-  }).select().single()
+  }
+  if (replyToMessageId) insertPayload.reply_to_message_id = replyToMessageId
+
+  let { data, error } = await supabase
+    .from('workspace_messages')
+    .insert(insertPayload)
+    .select()
+    .single()
+
+  // Backward-compatible fallback: DB might not have reply_to_message_id yet.
+  if (error && replyToMessageId && String(error.message || '').includes('reply_to_message_id')) {
+    ({ data, error } = await supabase
+      .from('workspace_messages')
+      .insert({
+        workspace_id: currentWorkspaceId.value,
+        sender_id: currentUser.value.id,
+        content: text,
+      })
+      .select()
+      .single())
+    if (!error) {
+      showToast('Reply Pending Upgrade', 'Reply was sent as a normal message. Run db migration to enable replies.', 'yellow')
+    }
+  }
+
   if (error) {
     showToast('Error', 'Could not send message', 'red')
     return
@@ -1176,6 +1232,12 @@ async function sendWorkspaceMessage(content) {
 
   const mapped = mapChatMessage(data)
   if (!chatMessages.value.find(m => m.id === mapped.id)) chatMessages.value.push(mapped)
+  await notifyWorkspaceMembers(
+    'chat_message',
+    `${currentUser.value.name} - New message`,
+    currentWorkspaceId.value,
+    currentUser.value.id,
+  )
   await markChatRead()
   await logActivity('chat_message_sent', 'workspace_message', mapped.id, `${currentUser.value.name} sent a chat message`)
 }

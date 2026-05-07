@@ -64,7 +64,8 @@ supabase/
     â”œâ”€â”€ 004_activity_comments_notifications.sql    â€” adds confirmed to tasks; creates task_comments, activity_logs, notifications tables
     â”œâ”€â”€ 005_workspace_ownership.sql                â€” adds workspaces + workspace_members and scopes core tables
     â”œâ”€â”€ 006_done_status_config.sql                 â€” adds task_statuses.is_done for configurable done state
-    â””â”€â”€ 007_workspace_chat.sql                     â€” adds workspace_messages + workspace_chat_reads and chat realtime publication
+    â”œâ”€â”€ 007_workspace_chat.sql                     â€” adds workspace_messages + workspace_chat_reads and chat realtime publication
+    â””â”€â”€ 008_workspace_chat_replies.sql             â€” adds `workspace_messages.reply_to_message_id` for chat reply threading
 ```
 
 ### Auth flow
@@ -246,6 +247,10 @@ The app uses a simple custom auth layer â€” **no Supabase Auth**. Credentia
 - Accepts `messages` and `members` props.
 - Emits `send-message` and `mark-read`.
 - Composer trims input, supports Enter-to-send, and enforces max length 2000 characters.
+- Includes compact message replies:
+  - each message has a `Reply` action
+  - composer shows a compact "Replying to â€¦" bar with cancel
+  - replied messages render compact parent-message preview in the timeline
 
 ### SettingsSidebar
 
@@ -313,7 +318,13 @@ user action (component event)
 State is persisted in **Supabase Postgres**. See [SUPABASE.md](./SUPABASE.md) for full database documentation.
 
 
-### Latest updates (v3.12.2)
+### Latest updates (v3.12.3)
+
+- Added compact chat reply UI and reply threading support in `ChatView`.
+- Added DB migration `008_workspace_chat_replies.sql` and schema support for `workspace_messages.reply_to_message_id`.
+- Reply messages now persist parent links so reply context survives reload and is visible to all workspace members.
+
+### Previous updates (v3.12.2)
 
 - Added BoardView fixed **Back to Top** button for long board pages.
 - Button appears after scroll threshold and uses smooth scroll-to-top behavior.

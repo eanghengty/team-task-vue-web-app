@@ -106,6 +106,7 @@ create table workspace_messages (
   id           uuid primary key default gen_random_uuid(),
   workspace_id uuid not null references workspaces(id) on delete cascade,
   sender_id    uuid references members(id) on delete set null,
+  reply_to_message_id uuid references workspace_messages(id) on delete set null,
   content      text not null check (char_length(trim(content)) > 0 and char_length(content) <= 2000),
   created_at   timestamptz not null default now()
 );

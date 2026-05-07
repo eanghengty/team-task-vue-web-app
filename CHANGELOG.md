@@ -2,6 +2,23 @@
 
 All notable changes to SQUAD â€” Team Task Board.
 
+## [3.12.3] - 2026-05-07
+
+### Added
+- **Chat reply threading (compact UI)** in workspace chat:
+  - `Reply` action on each message
+  - compact "Replying to ..." composer context with cancel
+  - compact parent-message preview on replied messages
+- New migration: `008_workspace_chat_replies.sql`.
+
+### Changed
+- `workspace_messages` now supports `reply_to_message_id` (self-reference) so reply links are persisted and shared across members/reloads.
+
+### Note
+- Requires `npm run db:push` before reply send succeeds against remote Supabase.
+
+---
+
 ## [3.12.2] - 2026-05-07
 
 ### Added
