@@ -22,14 +22,28 @@
               {{ new Date(r.datetime).toLocaleString() }}
             </span>
             <span v-if="linkedTask(r)" class="text-xs" style="color:var(--muted)">→ {{ linkedTask(r).title }}</span>
-            <div v-if="reminderMember(r)" class="avatar"
+            <div v-if="reminderMember(r)" class="avatar overflow-hidden"
               :style="{ background: reminderMember(r).color, color: '#000', width:'18px', height:'18px', fontSize:'8px' }">
-              {{ reminderMember(r).name.slice(0, 2).toUpperCase() }}
+              <img
+                v-if="reminderMember(r).avatarUrl"
+                :src="reminderMember(r).avatarUrl"
+                :alt="reminderMember(r).name"
+                class="w-full h-full object-cover"
+              />
+              <span v-else>{{ reminderMember(r).name.slice(0, 2).toUpperCase() }}</span>
             </div>
           </div>
         </div>
         <div class="flex items-center gap-2">
           <span v-if="r.fired" class="badge badge-gray text-xs">fired</span>
+          <button
+            v-if="canEditReminder(r)"
+            @click="$emit('edit-reminder', r.id)"
+            class="hover:text-white transition-colors"
+            style="color:var(--muted);display:flex;align-items:center"
+          >
+            <span class="material-icons" style="font-size:16px">edit</span>
+          </button>
           <button @click="$emit('delete-reminder', r.id)"
             class="hover:text-red-400 transition-colors" style="color:var(--muted);display:flex;align-items:center"><span class="material-icons" style="font-size:16px">close</span></button>
         </div>
@@ -43,11 +57,14 @@ const props = defineProps({
   reminders: Array,
   tasks: Array,
   members: Array,
+  currentUser: Object,
 })
-defineEmits(['open-modal', 'delete-reminder'])
+defineEmits(['open-modal', 'delete-reminder', 'edit-reminder'])
 
 const isPast         = (r) => !r.fired && new Date(r.datetime) < new Date()
 const linkedTask     = (r) => r.taskId ? props.tasks.find(t => t.id === r.taskId) : null
 const reminderMember = (r) => r.assigneeId && r.assigneeId !== 'team'
   ? props.members.find(m => m.id === r.assigneeId) : null
+const canEditReminder = (r) =>
+  props.currentUser?.access === 'admin' || r.assigneeId === props.currentUser?.id
 </script>

@@ -19,8 +19,14 @@
     <div class="flex items-center justify-between mt-3">
       <div class="flex items-center gap-2">
         <template v-if="member">
-          <div class="avatar" :style="{ background: member.color, color: '#000' }">
-            {{ member.name.slice(0, 2).toUpperCase() }}
+          <div class="avatar overflow-hidden" :style="{ background: member.color, color: '#000' }">
+            <img
+              v-if="member.avatarUrl"
+              :src="member.avatarUrl"
+              :alt="member.name"
+              class="w-full h-full object-cover"
+            />
+            <span v-else>{{ member.name.slice(0, 2).toUpperCase() }}</span>
           </div>
         </template>
         <span v-if="task.due" class="text-xs font-mono"

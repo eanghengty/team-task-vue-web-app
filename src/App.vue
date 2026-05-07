@@ -88,11 +88,13 @@
         </p>
       </div>
     </div>
-    <StatsBar :tasks="tasks" :members="members" @open-modal="openModal" />
+    <StatsBar :tasks="tasks" :workspace-members="workspaceMemberDetails" />
     <TabBar
       v-model:currentTab="currentTab"
       v-model:filterMember="filterMember"
       v-model:filterPriority="filterPriority"
+      v-model:filterDueFrom="filterDueFrom"
+      v-model:filterDueTo="filterDueTo"
       :members="members"
       :pending-count="pendingReminders.length"
       :chat-unread-count="chatUnreadCount"
@@ -139,7 +141,9 @@
           :reminders="reminders"
           :tasks="tasks"
           :members="members"
+          :current-user="currentUser"
           @open-modal="openModal"
+          @edit-reminder="openEditReminder"
           @delete-reminder="deleteReminder"
         />
         <ActivityLogView v-if="currentTab === 'activity'" :workspace-id="currentWorkspaceId" />
@@ -163,8 +167,20 @@
       :form="remForm"
       :tasks="tasks"
       :members="members"
+      title-text="NEW REMINDER"
+      submit-text="Set Reminder"
       @close="modals.reminder = false"
       @submit="addReminder"
+    />
+    <AddReminderModal
+      :open="modals.reminderEdit"
+      :form="remEditForm"
+      :tasks="tasks"
+      :members="members"
+      title-text="EDIT REMINDER"
+      submit-text="Save Changes"
+      @close="closeEditReminder"
+      @submit="updateReminder"
     />
     <TaskDetailModal
       :open="modals.detail"
@@ -295,6 +311,7 @@ function logout() {
   tasks.value         = []
   reminders.value     = []
   reminderTriggeredCard.value = null
+  reminderTriggeredQueue.value = []
   chatMessages.value  = []
   chatLastReadAt.value = null
   columns.value       = []
@@ -307,6 +324,8 @@ const clock             = ref('--:--:--')
 const currentTab        = ref('board')
 const filterMember      = ref('')
 const filterPriority    = ref('')
+const filterDueFrom     = ref('')
+const filterDueTo       = ref('')
 const dragTaskId        = ref(null)
 const dragOver          = ref(null)
 const detailTask        = ref(null)
@@ -316,6 +335,7 @@ const taskLoadingQuote  = ref('Progress is built one small step at a time.')
 const taskDoneSubmitting = ref(false)
 const doneLoadingQuote  = ref('Progress is built one small step at a time.')
 const reminderTriggeredCard = ref(null)
+const reminderTriggeredQueue = ref([])
 const showSettings      = ref(false)
 const showNotifications = ref(false)
 const isDark            = ref(localStorage.getItem('squad_theme') !== 'light')
@@ -357,9 +377,10 @@ const startupCdnUrls = [
   'https://unpkg.com/@dotlottie/player-component@2.7.12/dist/dotlottie-player.mjs',
 ]
 
-const modals     = reactive({ add: false, reminder: false, detail: false, member: false, workspace: false })
+const modals     = reactive({ add: false, reminder: false, reminderEdit: false, detail: false, member: false, workspace: false })
 const form       = reactive({ title: '', desc: '', assigneeId: '', priority: 'medium', due: '', status: 'todo', reminderDt: '' })
 const remForm    = reactive({ title: '', taskId: '', datetime: '', assigneeId: 'team' })
+const remEditForm = reactive({ id: '', title: '', taskId: '', datetime: '', assigneeId: 'team' })
 const memberForm = reactive({ name: '', role: '', email: '', password: '', access: 'user', color: '#e8ff47' })
 const memberColors = ['#e8ff47', '#ff4747', '#47c5ff', '#b47aff', '#ff9e47', '#47ffd4']
 const shaking    = reactive({ taskTitle: false, taskAssignee: false })
@@ -402,6 +423,7 @@ function mapMember(row) {
     access:   row.access ?? 'user',
     email:    row.email ?? '',
     password: row.password ?? '',
+    avatarUrl: row.avatar_url ?? '',
   }
 }
 
@@ -464,10 +486,20 @@ function localDateTimeToIso(value) {
   return parsed.toISOString()
 }
 
+function isoToLocalDateTimeInput(value) {
+  if (!value) return ''
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return ''
+  const tzOffsetMs = parsed.getTimezoneOffset() * 60000
+  return new Date(parsed.getTime() - tzOffsetMs).toISOString().slice(0, 16)
+}
+
 // ── computed ──────────────────────────────────────────────────────────────────
 const filteredTasks = computed(() => tasks.value.filter(t =>
   (!filterMember.value   || t.assigneeId === filterMember.value) &&
-  (!filterPriority.value || t.priority   === filterPriority.value)
+  (!filterPriority.value || t.priority   === filterPriority.value) &&
+  (!filterDueFrom.value  || (t.due && t.due >= filterDueFrom.value)) &&
+  (!filterDueTo.value    || (t.due && t.due <= filterDueTo.value))
 ))
 
 const pendingReminders = computed(() => reminders.value.filter(r => !r.fired))
@@ -482,6 +514,17 @@ const chatUnreadCount  = computed(() => {
 const workspaceAssignableMembers = computed(() => {
   const memberIds = new Set(workspaceMembers.value.map(wm => wm.member_id))
   return members.value.filter(m => memberIds.has(m.id) || m.access === 'admin')
+})
+const workspaceMemberDetails = computed(() => {
+  const memberIds = new Set(workspaceMembers.value.map(wm => wm.member_id))
+  return members.value
+    .filter(m => memberIds.has(m.id))
+    .map(m => ({
+      id: m.id,
+      name: m.name,
+      role: m.role,
+      email: m.email,
+    }))
 })
 
 const columns = ref([])
@@ -858,12 +901,12 @@ async function startApp() {
       const localReminder = reminders.value.find(r => r.id === mapped.id)
       if (localReminder) localReminder.fired = true
       const workspaceName = workspaces.value.find(w => w.id === mapped.workspaceId)?.name ?? 'Unknown Workspace'
-      reminderTriggeredCard.value = {
+      enqueueReminderCard({
         id: mapped.id,
         title: mapped.title,
         workspaceId: mapped.workspaceId,
         workspaceName,
-      }
+      })
       await supabase.from('reminders').update({ fired: true }).eq('id', mapped.id)
     }
   }, 15000)
@@ -888,7 +931,22 @@ function toggleTheme() {
 }
 
 function closeReminderCard() {
+  if (reminderTriggeredQueue.value.length) {
+    reminderTriggeredCard.value = reminderTriggeredQueue.value.shift()
+    return
+  }
   reminderTriggeredCard.value = null
+}
+
+function enqueueReminderCard(card) {
+  if (!card?.id) return
+  if (reminderTriggeredCard.value?.id === card.id) return
+  if (reminderTriggeredQueue.value.some(item => item.id === card.id)) return
+  if (!reminderTriggeredCard.value) {
+    reminderTriggeredCard.value = card
+    return
+  }
+  reminderTriggeredQueue.value.push(card)
 }
 
 onMounted(() => {
@@ -918,6 +976,29 @@ watch(currentTab, async (tab) => {
 
 // ── actions ───────────────────────────────────────────────────────────────────
 function openModal(type) { modals[type] = true }
+function closeEditReminder() {
+  modals.reminderEdit = false
+  Object.assign(remEditForm, { id: '', title: '', taskId: '', datetime: '', assigneeId: 'team' })
+}
+
+function openEditReminder(reminderId) {
+  const r = reminders.value.find(item => item.id === reminderId)
+  if (!r) return
+  const isAdmin = currentUser.value?.access === 'admin'
+  const isOwner = r.assigneeId === currentUser.value?.id
+  if (!isAdmin && !isOwner) {
+    showToast('Permission Denied', 'You can only edit reminders assigned to you', 'red')
+    return
+  }
+  Object.assign(remEditForm, {
+    id: r.id,
+    title: r.title,
+    taskId: r.taskId || '',
+    datetime: isoToLocalDateTimeInput(r.datetime),
+    assigneeId: r.assigneeId || 'team',
+  })
+  modals.reminderEdit = true
+}
 
 async function selectWorkspace(workspaceId) {
   if (!workspaceId) return
@@ -1287,6 +1368,56 @@ async function addReminder() {
   logActivity('reminder_created', 'reminder', data.id, `${currentUser.value.name} set reminder: "${title}"`)
 }
 
+async function updateReminder() {
+  if (!canAccessCurrentWorkspace()) return
+  if (!remEditForm.id || !remEditForm.title.trim() || !remEditForm.datetime) return
+  const existing = reminders.value.find(r => r.id === remEditForm.id)
+  if (!existing) return
+
+  const isAdmin = currentUser.value?.access === 'admin'
+  const isOwner = existing.assigneeId === currentUser.value?.id
+  if (!isAdmin && !isOwner) {
+    showToast('Permission Denied', 'You can only edit reminders assigned to you', 'red')
+    return
+  }
+
+  const reminderIso = localDateTimeToIso(remEditForm.datetime)
+  if (!reminderIso) {
+    showToast('Error', 'Invalid reminder date/time', 'red')
+    return
+  }
+
+  const patch = {
+    title: remEditForm.title.trim(),
+    task_id: remEditForm.taskId || null,
+    datetime: reminderIso,
+    assignee_id: remEditForm.assigneeId,
+    fired: false,
+  }
+
+  Object.assign(existing, {
+    title: patch.title,
+    taskId: patch.task_id,
+    datetime: patch.datetime,
+    assigneeId: patch.assignee_id,
+    fired: patch.fired,
+  })
+
+  const { error } = await supabase
+    .from('reminders')
+    .update(patch)
+    .eq('id', remEditForm.id)
+
+  if (error) {
+    showToast('Error', 'Could not update reminder', 'red')
+    return
+  }
+
+  showToast('Reminder Updated', patch.title, 'yellow')
+  closeEditReminder()
+  logActivity('reminder_updated', 'reminder', existing.id, `${currentUser.value.name} updated reminder: "${patch.title}"`)
+}
+
 async function deleteReminder(id) {
   if (!canAccessCurrentWorkspace()) return
   reminders.value = reminders.value.filter(r => r.id !== id)
@@ -1316,14 +1447,24 @@ async function addMember() {
   logActivity('member_added', 'member', data.id, `${currentUser.value.name} added member: ${data.name}`)
 }
 
-async function updateMember({ id, name, role, email, password, color, access }) {
+async function updateMember({ id, name, role, email, password, color, access, avatarUrl }) {
   const m = members.value.find(m => m.id === id)
   if (!m) return
-  const patch = { name, role, color, access, email: email.trim() || null }
-  if (password) patch.password = password
-  Object.assign(m, patch)
-  if (currentUser.value?.id === id) Object.assign(currentUser.value, patch)
-  const { error } = await supabase.from('members').update(patch).eq('id', id)
+  const dbPatch = { name, role, color, access, email: email.trim() || null }
+  if (password) dbPatch.password = password
+  if (typeof avatarUrl === 'string') dbPatch.avatar_url = avatarUrl || null
+  const localPatch = {
+    name,
+    role,
+    color,
+    access,
+    email: email.trim() || null,
+    ...(password ? { password } : {}),
+    avatarUrl: typeof avatarUrl === 'string' ? avatarUrl : m.avatarUrl,
+  }
+  Object.assign(m, localPatch)
+  if (currentUser.value?.id === id) Object.assign(currentUser.value, localPatch)
+  const { error } = await supabase.from('members').update(dbPatch).eq('id', id)
   if (error) showToast('Error', 'Could not update member', 'red')
   else showToast('Member Updated', name, 'blue')
 }

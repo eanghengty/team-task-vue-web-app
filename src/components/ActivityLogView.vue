@@ -29,9 +29,15 @@
             <td class="p-3 text-xs font-mono whitespace-nowrap" style="color:var(--muted)">{{ fmtDate(log.created_at) }}</td>
             <td class="p-3">
               <div v-if="log.actor" class="flex items-center gap-2">
-                <div class="avatar" style="width:22px;height:22px;font-size:9px"
+                <div class="avatar overflow-hidden" style="width:22px;height:22px;font-size:9px"
                   :style="{ background: log.actor.color || '#444', color: '#0d0d0d' }">
-                  {{ initials(log.actor.name) }}
+                  <img
+                    v-if="log.actor.avatar_url"
+                    :src="log.actor.avatar_url"
+                    :alt="log.actor.name"
+                    class="w-full h-full object-cover"
+                  />
+                  <span v-else>{{ initials(log.actor.name) }}</span>
                 </div>
                 <span class="text-xs">{{ log.actor.name }}</span>
               </div>
@@ -85,7 +91,7 @@ async function fetchPage(p) {
   const [countRes, dataRes] = await Promise.all([
     supabase.from('activity_logs').select('id', { count: 'exact', head: true }).eq('workspace_id', props.workspaceId),
     supabase.from('activity_logs')
-      .select('*, actor:actor_id(id, name, color)')
+      .select('*, actor:actor_id(id, name, color, avatar_url)')
       .eq('workspace_id', props.workspaceId)
       .order('created_at', { ascending: false })
       .range(from, to),

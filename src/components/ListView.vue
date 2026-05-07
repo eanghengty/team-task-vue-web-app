@@ -34,9 +34,15 @@
           </td>
           <td class="p-3">
             <div class="flex items-center gap-2">
-              <div v-if="memberById(task.assigneeId)" class="avatar"
+              <div v-if="memberById(task.assigneeId)" class="avatar overflow-hidden"
                 :style="{ background: memberById(task.assigneeId).color, color: '#000', width:'22px', height:'22px', fontSize:'9px' }">
-                {{ memberById(task.assigneeId).name.slice(0, 2).toUpperCase() }}
+                <img
+                  v-if="memberById(task.assigneeId).avatarUrl"
+                  :src="memberById(task.assigneeId).avatarUrl"
+                  :alt="memberById(task.assigneeId).name"
+                  class="w-full h-full object-cover"
+                />
+                <span v-else>{{ memberById(task.assigneeId).name.slice(0, 2).toUpperCase() }}</span>
               </div>
               <span class="text-sm">{{ memberById(task.assigneeId)?.name || '—' }}</span>
             </div>

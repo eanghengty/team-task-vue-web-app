@@ -32,6 +32,24 @@
         <option value="medium">Medium</option>
         <option value="low">Low</option>
       </select>
+      <div v-if="currentTab === 'list'" class="flex items-center gap-2">
+        <span class="text-xs" style="color:var(--muted)">Due:</span>
+        <input
+          type="date"
+          class="field text-xs"
+          style="width:auto;padding:5px 10px"
+          :value="filterDueFrom"
+          @input="$emit('update:filterDueFrom', $event.target.value)"
+        />
+        <span class="text-xs" style="color:var(--muted)">to</span>
+        <input
+          type="date"
+          class="field text-xs"
+          style="width:auto;padding:5px 10px"
+          :value="filterDueTo"
+          @input="$emit('update:filterDueTo', $event.target.value)"
+        />
+      </div>
     </div>
   </div>
 </template>
@@ -42,9 +60,11 @@ defineProps({
   members:        Array,
   filterMember:   String,
   filterPriority: String,
+  filterDueFrom:  String,
+  filterDueTo:    String,
   pendingCount:   Number,
   chatUnreadCount: Number,
   currentUser:    Object,
 })
-defineEmits(['update:currentTab', 'update:filterMember', 'update:filterPriority'])
+defineEmits(['update:currentTab', 'update:filterMember', 'update:filterPriority', 'update:filterDueFrom', 'update:filterDueTo'])
 </script>

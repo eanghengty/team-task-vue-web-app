@@ -53,6 +53,34 @@
           {{ isDark ? 'Light Mode' : 'Dark Mode' }}
         </button>
       </div>
+      <div class="px-6 py-4 flex flex-col gap-3" style="border-bottom:1px solid var(--border)">
+        <div class="text-sm font-medium">Profile Picture</div>
+        <div class="flex items-center gap-3">
+          <div class="avatar flex-shrink-0 overflow-hidden" :style="{ background: currentUser.color, color: '#0d0d0d' }">
+            <img
+              v-if="currentUser.avatarUrl"
+              :src="currentUser.avatarUrl"
+              alt="Profile"
+              class="w-full h-full object-cover"
+            />
+            <span v-else>{{ initials(currentUser.name) }}</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <input
+              ref="avatarInputRef"
+              type="file"
+              accept="image/*"
+              class="hidden"
+              @change="onAvatarSelected"
+            />
+            <button class="btn-ghost text-xs px-3 py-1.5" @click="avatarInputRef?.click()">Upload</button>
+            <button v-if="currentUser.avatarUrl" class="btn-ghost text-xs px-3 py-1.5" @click="removeAvatar">Remove</button>
+          </div>
+        </div>
+        <div v-if="avatarError" class="text-xs px-3 py-2 rounded-lg font-mono" style="background:rgba(255,71,71,0.12);color:var(--accent2);border:1px solid rgba(255,71,71,0.25)">
+          {{ avatarError }}
+        </div>
+      </div>
 
       <!-- ── USER: Change Password only ─────────────────────────── -->
       <div v-if="showUserPasswordView" class="p-6 flex flex-col gap-4">
@@ -64,8 +92,14 @@
         <div class="member-row flex flex-col gap-3">
           <!-- Current user info (read-only) -->
           <div class="flex items-center gap-3 pb-3" style="border-bottom:1px solid var(--border)">
-            <div class="avatar flex-shrink-0" :style="{ background: currentUser.color, color: '#0d0d0d' }">
-              {{ initials(currentUser.name) }}
+            <div class="avatar flex-shrink-0 overflow-hidden" :style="{ background: currentUser.color, color: '#0d0d0d' }">
+              <img
+                v-if="currentUser.avatarUrl"
+                :src="currentUser.avatarUrl"
+                alt="Profile"
+                class="w-full h-full object-cover"
+              />
+              <span v-else>{{ initials(currentUser.name) }}</span>
             </div>
             <div>
               <div class="font-medium text-sm">{{ currentUser.name }}</div>
@@ -134,8 +168,14 @@
             <div class="flex flex-col gap-3">
               <!-- Avatar preview + name -->
               <div class="flex items-center gap-3">
-                <div class="avatar flex-shrink-0" :style="{ background: editForm.color, color: '#0d0d0d' }">
-                  {{ initials(editForm.name) }}
+                <div class="avatar flex-shrink-0 overflow-hidden" :style="{ background: editForm.color, color: '#0d0d0d' }">
+                  <img
+                    v-if="editForm.avatarUrl"
+                    :src="editForm.avatarUrl"
+                    :alt="editForm.name"
+                    class="w-full h-full object-cover"
+                  />
+                  <span v-else>{{ initials(editForm.name) }}</span>
                 </div>
                 <input class="field text-sm" v-model="editForm.name" placeholder="Full name" />
               </div>
@@ -189,8 +229,14 @@
           <!-- ── View state ── -->
           <template v-else>
             <div class="flex items-center gap-3">
-              <div class="avatar flex-shrink-0" :style="{ background: m.color, color: '#0d0d0d' }">
-                {{ initials(m.name) }}
+              <div class="avatar flex-shrink-0 overflow-hidden" :style="{ background: m.color, color: '#0d0d0d' }">
+                <img
+                  v-if="m.avatarUrl"
+                  :src="m.avatarUrl"
+                  :alt="m.name"
+                  class="w-full h-full object-cover"
+                />
+                <span v-else>{{ initials(m.name) }}</span>
               </div>
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2">
@@ -396,8 +442,10 @@ const confirmPassword = ref('')
 const showNewPw       = ref(false)
 const showConfirmPw   = ref(false)
 const pwError         = ref('')
+const avatarError     = ref('')
+const avatarInputRef  = ref(null)
 
-const editForm       = reactive({ name: '', role: '', email: '', password: '', color: '', access: 'user' })
+const editForm       = reactive({ name: '', role: '', email: '', password: '', color: '', access: 'user', avatarUrl: '' })
 const statusEditForm = reactive({ label: '', dot: '' })
 const newStatusForm  = reactive({ label: '', dot: '#47ff8a' })
 
@@ -416,6 +464,56 @@ function savePassword() {
   })
   newPassword.value     = ''
   confirmPassword.value = ''
+}
+
+function onAvatarSelected(event) {
+  avatarError.value = ''
+  const file = event?.target?.files?.[0]
+  if (!file) return
+  if (!file.type.startsWith('image/')) {
+    avatarError.value = 'Please select an image file.'
+    return
+  }
+  if (file.size > 2 * 1024 * 1024) {
+    avatarError.value = 'Image must be 2MB or smaller.'
+    return
+  }
+
+  const reader = new FileReader()
+  reader.onload = () => {
+    const avatarUrl = typeof reader.result === 'string' ? reader.result : ''
+    if (!avatarUrl) {
+      avatarError.value = 'Could not read the selected image.'
+      return
+    }
+    emit('update-member', {
+      id:       props.currentUser.id,
+      name:     props.currentUser.name,
+      role:     props.currentUser.role,
+      email:    props.currentUser.email,
+      password: '',
+      color:    props.currentUser.color,
+      access:   props.currentUser.access,
+      avatarUrl,
+    })
+  }
+  reader.onerror = () => { avatarError.value = 'Could not read the selected image.' }
+  reader.readAsDataURL(file)
+  if (event?.target) event.target.value = ''
+}
+
+function removeAvatar() {
+  avatarError.value = ''
+  emit('update-member', {
+    id:       props.currentUser.id,
+    name:     props.currentUser.name,
+    role:     props.currentUser.role,
+    email:    props.currentUser.email,
+    password: '',
+    color:    props.currentUser.color,
+    access:   props.currentUser.access,
+    avatarUrl: '',
+  })
 }
 
 function slugify(label) {
@@ -480,6 +578,7 @@ function startEdit(m) {
     password: '',
     color:    m.color,
     access:   m.access ?? 'user',
+    avatarUrl: m.avatarUrl ?? '',
   })
 }
 

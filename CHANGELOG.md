@@ -2,6 +2,43 @@
 
 All notable changes to SQUAD — Team Task Board.
 
+## [3.14.0] - 2026-05-07
+
+### Added
+- **DB-backed member profile pictures** via new migration `010_member_avatar_url.sql` (`members.avatar_url`).
+- Profile picture upload/remove controls in Settings for all users (including admins for their own profile).
+- **List view due-date range filter** (`from` / `to`) using calendar date inputs.
+- **Workspace members quick panel** from Stats card:
+  - card now shows workspace member count only
+  - click opens top-layer panel with member name, role, and email
+
+### Changed
+- Reminder trigger popup now supports a **queue** so multiple reminders due at the same time are shown one-by-one instead of being overwritten.
+- Avatar circles across major UI surfaces now render uploaded photos first, with initials fallback.
+
+### Fixed
+- Workspace members panel layering so it renders above board/list/chat via `Teleport` + fixed high-z overlay.
+- Light-mode profile-name visibility near top-right user chip (explicit high-contrast text color).
+
+---
+
+## [3.13.0] - 2026-05-07
+
+### Added
+- **Reminder edit flow** with owner/admin permissions:
+  - users can edit reminders assigned to themselves
+  - admins can edit any reminder
+- Reminder list now includes an **Edit** action (Material `edit` icon) when the current user has permission.
+- `AddReminderModal` now supports reusable title/submit labels for create and edit modes.
+
+### Changed
+- Reminder edit saves now reset `fired = false` so updated reminders can trigger again at the new time.
+
+### Clarified behavior
+- If a reminder becomes due while the website is closed, it is caught on next app session/check cycle and then shown in-app (not pushed while offline).
+
+---
+
 ## [3.12.9] - 2026-05-07
 
 ### Added

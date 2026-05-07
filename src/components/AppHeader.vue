@@ -46,12 +46,18 @@
 
       <!-- current user chip -->
       <div class="flex items-center gap-2">
-        <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+        <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 overflow-hidden"
           :style="{ background: currentUser.color, color: '#0d0d0d' }">
-          {{ initials(currentUser.name) }}
+          <img
+            v-if="currentUser.avatarUrl"
+            :src="currentUser.avatarUrl"
+            alt="Profile"
+            class="w-full h-full object-cover"
+          />
+          <span v-else>{{ initials(currentUser.name) }}</span>
         </div>
         <span class="text-sm font-medium hidden sm:block"
-          style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#f5f5f5">
           {{ currentUser.name }}
         </span>
       </div>

@@ -45,8 +45,14 @@
             <div class="p-3 rounded-lg" style="background:var(--surface2)">
               <div class="text-xs font-mono mb-1" style="color:var(--muted)">ASSIGNED TO</div>
               <div class="flex items-center gap-2">
-                <div class="avatar" :style="{ background: assignee?.color || '#444', color: '#000' }">
-                  {{ assignee?.name?.slice(0, 2).toUpperCase() || '?' }}
+                <div class="avatar overflow-hidden" :style="{ background: assignee?.color || '#444', color: '#000' }">
+                  <img
+                    v-if="assignee?.avatarUrl"
+                    :src="assignee.avatarUrl"
+                    :alt="assignee?.name || 'Assignee'"
+                    class="w-full h-full object-cover"
+                  />
+                  <span v-else>{{ assignee?.name?.slice(0, 2).toUpperCase() || '?' }}</span>
                 </div>
                 <span>{{ assignee?.name || 'Unassigned' }}</span>
               </div>
@@ -106,9 +112,15 @@
               </div>
               <div v-for="c in comments" :key="c.id" class="rounded-lg p-3" style="background:var(--surface2)">
                 <div class="flex items-center gap-2 mb-1.5">
-                  <div class="avatar flex-shrink-0" style="width:20px;height:20px;font-size:8px"
+                  <div class="avatar flex-shrink-0 overflow-hidden" style="width:20px;height:20px;font-size:8px"
                     :style="{ background: commentAuthor(c.member_id)?.color || '#444', color: '#0d0d0d' }">
-                    {{ (commentAuthor(c.member_id)?.name || '?').slice(0, 2).toUpperCase() }}
+                    <img
+                      v-if="commentAuthor(c.member_id)?.avatarUrl"
+                      :src="commentAuthor(c.member_id).avatarUrl"
+                      :alt="commentAuthor(c.member_id)?.name || 'Author'"
+                      class="w-full h-full object-cover"
+                    />
+                    <span v-else>{{ (commentAuthor(c.member_id)?.name || '?').slice(0, 2).toUpperCase() }}</span>
                   </div>
                   <span class="text-xs font-medium">{{ commentAuthor(c.member_id)?.name || 'Unknown' }}</span>
                   <span class="text-xs font-mono ml-auto" style="color:var(--muted)">{{ fmtDate(c.created_at) }}</span>

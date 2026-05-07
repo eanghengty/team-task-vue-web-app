@@ -66,7 +66,8 @@ supabase/
     ├── 006_done_status_config.sql                 — adds task_statuses.is_done for configurable done state
     ├── 007_workspace_chat.sql                     — adds workspace_messages + workspace_chat_reads and chat realtime publication
     ├── 008_workspace_chat_replies.sql             — adds `workspace_messages.reply_to_message_id` for chat reply threading
-    └── 009_motivational_quotes.sql                — adds `motivational_quotes` table and seeds 10 fixed quotes
+    ├── 009_motivational_quotes.sql                — adds `motivational_quotes` table and seeds 10 fixed quotes
+    └── 010_member_avatar_url.sql                  — adds `members.avatar_url` for DB-backed profile pictures
 ```
 
 ### Auth flow
@@ -106,7 +107,7 @@ The app uses a simple custom auth layer — **no Supabase Auth**. Credentials ar
 | `loginLoading` | `boolean` | Loading state for the login query |
 | `tasks` | `{ id, title, desc, assigneeId, priority, due, status, done, confirmed, createdAt }[]` | All tasks; `confirmed: false` = pending assignee acceptance |
 | `reminders` | `{ id, title, taskId, datetime, assigneeId, fired }[]` | Standalone + task-linked reminders |
-| `members` | `{ id, name, role, color, access, email, password }[]` | Team members |
+| `members` | `{ id, name, role, color, access, email, password, avatarUrl }[]` | Team members |
 | `columns` | `{ id, status, label, dot, sortOrder }[]` **ref** | Kanban column definitions loaded from `task_statuses` |
 | `notifications` | `{ id, memberId, senderId, type, message, taskId, read, createdAt }[]` **ref** | Per-user notifications; populated on login then kept live via Supabase Realtime |
 | `chatMessages` | `{ id, workspaceId, senderId, content, createdAt }[]` **ref** | Workspace chat timeline (latest 100 messages) |
@@ -119,6 +120,8 @@ The app uses a simple custom auth layer — **no Supabase Auth**. Credentials ar
 | `taskDoneSubmitting` | `boolean` ref | Controls done-state loading overlay during mark-done / drag-to-done actions |
 | `doneLoadingQuote` | `string` ref | Current motivational quote shown under done-loading Lottie |
 | `reminderTriggeredCard` | `{ id, title, workspaceId, workspaceName } \| null` ref | Controls reminder-trigger popup card content/visibility |
+| `reminderTriggeredQueue` | `{ id, title, workspaceId, workspaceName }[]` ref | Queue for sequential reminder popups when multiple reminders trigger together |
+| `remEditForm` | `{ id, title, taskId, datetime, assigneeId }` reactive | Controlled inputs for editing an existing reminder |
 | `isDark` | `boolean` ref | `true` = dark mode (default); persisted in `localStorage` as `squad_theme` |
 | `modals` | reactive object | `add / reminder / detail / member` boolean flags |
 | `form / remForm / memberForm` | reactive objects | Controlled inputs for each modal |
@@ -153,6 +156,7 @@ The app uses a simple custom auth layer — **no Supabase Auth**. Credentials ar
 | `toggleDone(id)` | Permission-gated: user marking other's done is blocked; user reopening other's task sends `task_reopen_request`; transitions into done show 7-second Lottie+quote loading before commit |
 | `deleteTask(id)` | Delete task + linked reminders locally and in DB; logs activity |
 | `addReminder()` | Insert standalone reminder; logs activity |
+| `updateReminder()` | Update existing reminder with permissions (admin any; user own-assigned only); resets `fired` to `false`; logs activity |
 | `deleteReminder(id)` | Delete reminder |
 | `addMember()` | Insert new member; logs activity |
 | `updateMember({ id, … })` | Update member fields; syncs `currentUser` if self-update |
@@ -253,6 +257,7 @@ The app uses a simple custom auth layer — **no Supabase Auth**. Credentials ar
 - Includes a **Chat tab** with unread badge from `chatUnreadCount`.
 - **Activity Log tab** rendered only when `currentUser.access === 'admin'`.
 - Member/priority filters are hidden when `currentTab === 'chat'`.
+- List view supports due-date range calendar filters (`from` / `to`) in the filter row.
 
 ### ChatView
 
@@ -322,8 +327,13 @@ The app uses a simple custom auth layer — **no Supabase Auth**. Credentials ar
 - **Task assignment loading** — task creation now enforces a minimum 7-second loading state with Lottie animation before modal closes.
 - **Motivational quote loading text** — assignment loading overlay shows only a motivational quote (no "Assigning task..." text), randomized from Supabase quotes when available.
 - **Done transition loading** — marking a task done (checkbox/button) or dragging a task into the done column shows a 7-second Lottie + motivational quote loading UI before write completion. Reopen actions are immediate.
+- **Reminder edit permissions** — reminder rows show Edit only when `currentUser.access === 'admin'` or `reminder.assigneeId === currentUser.id`. Admin can edit any reminder; users can edit reminders assigned to themselves.
 - **Reminder interval** — runs every 15 s and queries due, unfired reminders for the current user scope (`team` + `currentUser.id`) across workspaces. Triggered reminders are marked fired in DB and shown in a centered reminder popup card (with close `X`) that includes the workspace name.
+- **Reminder popup queue** — multiple due reminders are queued and shown one-by-one; closing the current popup shows the next queued reminder.
+- **Reminder catch-up while app was closed** — due reminders are not shown at their exact due moment when the website is closed; they appear on next session/check cycle after login and are then marked fired.
 - **Reminder time save format** — reminder values from `datetime-local` inputs are converted to ISO timestamps before insert to prevent timezone offsets on display/trigger.
+- **Workspace members stats card** — members card now shows current workspace member count only; clicking opens a top-layer panel listing member name, role, and email.
+- **Profile pictures** — avatars are DB-backed via `members.avatar_url`; uploaded images render across profile circles with initials fallback.
 - **Tab views** use `v-if` — no entry animations on per-item elements (causes flicker on tab switch).
 - **Drag-and-drop** — native HTML5 events. `dragTaskId` tracks in-flight card; `dragOver` drives highlight. Cards are non-draggable (`:draggable="false"`) for tasks the current user does not own. Status change logged after drop.
 - **Optimistic updates** — all actions mutate local refs immediately, then write to Supabase. Errors surface as red toasts.
@@ -342,7 +352,23 @@ user action (component event)
 
 State is persisted in **Supabase Postgres**. See [SUPABASE.md](./SUPABASE.md) for full database documentation.
 
-### Latest updates (v3.12.9)
+### Latest updates (v3.14.0)
+
+- Added DB-backed profile pictures with migration `010_member_avatar_url.sql` and `members.avatar_url`.
+- Added profile picture upload/remove in Settings for all users (including admins for their own profile).
+- Added list view due-date range filter (`from` / `to`).
+- Updated stats members card to workspace-only count and click-to-open member info panel (name, role, email).
+- Reminder popups now queue and display one-by-one when multiple reminders trigger together.
+- Fixed members panel layering above board/list/chat and improved light-mode top-right profile-name contrast.
+
+### Previous updates (v3.13.0)
+
+- Added reminder edit flow with role gating: admin can edit any reminder; users can edit reminders assigned to themselves.
+- Added Edit action to reminders list and reusable reminder modal labels for create/edit modes.
+- Reminder updates now reset `fired = false` so edited reminders can trigger again at the updated time.
+- Documented reminder catch-up behavior when reminders become due while the website is closed.
+
+### Previous updates (v3.12.9)
 
 - Added centered reminder-trigger popup card with reminder-specific Lottie and manual close (`X`).
 - Added workspace label on reminder popup so assignees can identify which workspace the reminder belongs to.

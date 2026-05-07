@@ -9,6 +9,7 @@ create table members (
   access     text not null default 'user' check (access in ('admin', 'user')),
   email      text unique,
   password   text,
+  avatar_url text,
   created_at timestamptz not null default now()
 );
 
