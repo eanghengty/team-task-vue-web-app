@@ -2,6 +2,37 @@
 
 All notable changes to SQUAD — Team Task Board.
 
+## [3.8.0] - 2026-05-07
+
+### Added
+- **Workspace ownership model** with `workspaces` and `workspace_members` tables.
+- New migration: `005_workspace_ownership.sql`.
+- **Workspace switcher in header** so users can change active workspace context.
+- **Create Workspace modal** (`AddWorkspaceModal.vue`) allowing any member to create a workspace; creator becomes owner.
+- **Workspace management tab** in `SettingsSidebar` for admin/owner: rename workspace, add members, remove members.
+- `App.vue` workspace actions: `fetchWorkspaces`, `fetchWorkspaceData`, `selectWorkspace`, `createWorkspace`, `updateWorkspace`, `addWorkspaceMember`, `removeWorkspaceMember`.
+
+### Changed
+- Data model now scopes operational entities by workspace:
+  - `tasks`, `reminders`, `notifications`, `activity_logs`, `task_comments` now use `workspace_id`.
+- Existing data is migrated into a default **Main Workspace** and all existing members are added to it.
+- Board/List/Reminders/Notifications/Activity flows now run in the **current workspace context**.
+- Realtime channels now filter by active workspace for `tasks`, and by both `member_id` + `workspace_id` for notifications.
+- Activity log view and task comment queries are workspace-scoped.
+- Task creation assignee options are workspace-aware (`workspaceAssignableMembers`).
+
+### DB
+- Updated `supabase/schema.sql` to include workspace-aware full schema.
+- Added open-dev RLS policies for `workspaces` and `workspace_members`.
+
+### Prerequisite
+- Ensure Realtime publication includes workspace-scoped tables used by subscriptions:
+  ```sql
+  ALTER PUBLICATION supabase_realtime ADD TABLE tasks;
+  ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
+  ```
+
+---
 ## [3.7.0] — 2026-05-03
 
 ### Added
@@ -300,3 +331,4 @@ All notable changes to SQUAD — Team Task Board.
 - Member filter and priority filter.
 - Live clock in header.
 - Seeded sample data (3 members, 5 tasks, 1 reminder).
+

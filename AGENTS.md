@@ -63,6 +63,28 @@ supabase/
     └── 004_activity_comments_notifications.sql    — adds confirmed to tasks; creates task_comments, activity_logs, notifications tables
 ```
 
+
+### Workspace model (v3.8.0)
+
+The app now supports first-class workspaces. Boards, tasks, reminders, notifications, activity logs, and task comments are scoped to the currently selected workspace.
+
+- Visibility:
+  - `admin` can see/manage all workspaces.
+  - Workspace `owner` can see/manage their workspace.
+  - Members can see workspaces where they exist in `workspace_members`.
+- Creation:
+  - Any member can create a workspace.
+  - Creator becomes the workspace owner and is auto-added to workspace members.
+- Scoping:
+  - `tasks`, `reminders`, `notifications`, `activity_logs`, and `task_comments` include `workspace_id`.
+  - `task_statuses` remains global across all workspaces.
+- UI:
+  - `AppHeader` includes a workspace switcher.
+  - `AddWorkspaceModal` handles workspace creation.
+  - `SettingsSidebar` has a Workspaces tab for owner/admin management.
+- Realtime:
+  - Tasks subscription is filtered by active `workspace_id`.
+  - Notifications subscription is filtered by both `member_id` and active `workspace_id`.
 ### Auth flow
 
 The app uses a simple custom auth layer — **no Supabase Auth**. Credentials are stored in the `members` table.
@@ -285,3 +307,4 @@ user action (component event)
 ```
 
 State is persisted in **Supabase Postgres**. See [SUPABASE.md](./SUPABASE.md) for full database documentation.
+

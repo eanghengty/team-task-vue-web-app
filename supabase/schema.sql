@@ -1,4 +1,4 @@
--- SQUAD — Team Task Board
+ï»¿-- SQUAD â€” Team Task Board
 -- Run this in your Supabase SQL editor before starting the app.
 
 create table members (
@@ -32,6 +32,7 @@ create table task_statuses (
   key        text not null unique,
   label      text not null,
   dot        text not null default '#888888',
+  is_done    boolean not null default false,
   sort_order int  not null default 0,
   created_at timestamptz not null default now()
 );
@@ -41,6 +42,8 @@ insert into task_statuses (key, label, dot, sort_order) values
   ('progress', 'In Progress', '#e8ff47', 1),
   ('review',   'Review',      '#47c5ff', 2),
   ('done',     'Done',        '#444444', 3);
+
+update task_statuses set is_done = true where key = 'done';
 
 create table tasks (
   id           uuid primary key default gen_random_uuid(),
@@ -110,7 +113,7 @@ alter table task_comments enable row level security;
 alter table activity_logs enable row level security;
 alter table notifications enable row level security;
 
--- Dev-only open policies — tighten these before going to production
+-- Dev-only open policies â€” tighten these before going to production
 create policy "allow all members" on members for all using (true) with check (true);
 create policy "allow all workspaces" on workspaces for all using (true) with check (true);
 create policy "allow all workspace_members" on workspace_members for all using (true) with check (true);
@@ -120,3 +123,4 @@ create policy "allow all task_statuses" on task_statuses for all using (true) wi
 create policy "allow all task_comments" on task_comments for all using (true) with check (true);
 create policy "allow all activity_logs" on activity_logs for all using (true) with check (true);
 create policy "allow all notifications" on notifications for all using (true) with check (true);
+

@@ -127,6 +127,7 @@
       @delete-member="deleteMember"
       @toggle-theme="toggleTheme"
       @update-status="updateColumn"
+      @set-done-status="setDoneStatus"
       @add-status="addStatus"
       @delete-status="deleteStatus"
       @reorder-status="reorderColumn"
@@ -286,7 +287,14 @@ function mapMember(row) {
 }
 
 function mapStatus(row) {
-  return { id: row.id, status: row.key, label: row.label, dot: row.dot, sortOrder: row.sort_order }
+  return {
+    id: row.id,
+    status: row.key,
+    label: row.label,
+    dot: row.dot,
+    isDone: !!row.is_done,
+    sortOrder: row.sort_order,
+  }
 }
 
 function mapNotification(row) {
@@ -326,6 +334,9 @@ const workspaceAssignableMembers = computed(() => {
 })
 
 const columns = ref([])
+const doneStatusKey = computed(() =>
+  columns.value.find(c => c.isDone)?.status ?? 'done'
+)
 
 // ── data fetching ─────────────────────────────────────────────────────────────
 async function fetchAll() {
@@ -747,7 +758,7 @@ async function toggleDone(id) {
     return
   }
 
-  const doneKey   = columns.value.at(-1)?.status ?? 'done'
+  const doneKey   = doneStatusKey.value
   const firstKey  = columns.value[0]?.status ?? 'todo'
   const newDone   = !t.done
   const newStatus = newDone ? doneKey : t.status === doneKey ? firstKey : t.status
@@ -880,7 +891,7 @@ async function addStatus({ label, dot }) {
   }
   const sortOrder = columns.value.length
   const { data, error } = await supabase.from('task_statuses')
-    .insert({ key, label, dot, sort_order: sortOrder })
+    .insert({ key, label, dot, is_done: false, sort_order: sortOrder })
     .select().single()
   if (error) { showToast('Error', 'Could not add status', 'red'); return }
   columns.value.push(mapStatus(data))
@@ -888,6 +899,10 @@ async function addStatus({ label, dot }) {
 }
 
 async function deleteStatus(status) {
+  const isDoneStatus = columns.value.find(c => c.status === status)?.isDone
+  if (isDoneStatus) {
+    showToast('Error', 'Set another done status before deleting this one', 'red'); return
+  }
   const inUse = tasks.value.some(t => t.status === status)
   if (inUse) {
     showToast('Error', 'Cannot delete — tasks exist with this status', 'red'); return
@@ -896,6 +911,23 @@ async function deleteStatus(status) {
   const { error } = await supabase.from('task_statuses').delete().eq('key', status)
   if (error) showToast('Error', 'Could not delete status', 'red')
   else showToast('Status Removed', status, 'yellow')
+}
+
+async function setDoneStatus(status) {
+  if (!columns.value.some(c => c.status === status)) return
+  for (const col of columns.value) {
+    const { error } = await supabase
+      .from('task_statuses')
+      .update({ is_done: col.status === status })
+      .eq('key', col.status)
+    if (error) {
+      showToast('Error', 'Could not update done status', 'red')
+      return
+    }
+  }
+  columns.value = columns.value.map(c => ({ ...c, isDone: c.status === status }))
+  tasks.value = tasks.value.map(t => ({ ...t, done: t.status === status }))
+  showToast('Updated', `Done status set to ${columns.value.find(c => c.status === status)?.label ?? status}`, 'yellow')
 }
 
 async function reorderColumn(status, direction) {
@@ -928,7 +960,7 @@ async function onDrop(status) {
     dragOver.value   = null
     return
   }
-  const isDone = status === columns.value.at(-1)?.status
+  const isDone = status === doneStatusKey.value
   t.status = status
   t.done   = isDone
   dragTaskId.value = null
@@ -1012,7 +1044,7 @@ async function acceptReopenRequest(notif) {
   const t = tasks.value.find(t => t.id === notif.taskId)
   if (t) {
     const firstKey = columns.value[0]?.status ?? 'todo'
-    const doneKey  = columns.value.at(-1)?.status ?? 'done'
+    const doneKey  = doneStatusKey.value
     t.done   = false
     t.status = t.status === doneKey ? firstKey : t.status
     await supabase.from('tasks').update({ done: false, status: t.status }).eq('id', t.id)

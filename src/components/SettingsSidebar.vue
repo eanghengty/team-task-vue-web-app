@@ -286,6 +286,14 @@
               <div class="flex items-center gap-1 flex-shrink-0">
                 <button
                   class="icon-btn"
+                  :title="col.isDone ? 'Done status' : 'Set as done status'"
+                  :style="{ color: col.isDone ? 'var(--accent)' : 'var(--muted)' }"
+                  @click="$emit('set-done-status', col.status)"
+                >
+                  <span class="material-icons" style="font-size:16px">{{ col.isDone ? 'task_alt' : 'radio_button_unchecked' }}</span>
+                </button>
+                <button
+                  class="icon-btn"
                   title="Move up"
                   :style="{ opacity: columns.indexOf(col) === 0 ? 0.3 : 1, cursor: columns.indexOf(col) === 0 ? 'not-allowed' : 'pointer' }"
                   :disabled="columns.indexOf(col) === 0"
@@ -370,7 +378,7 @@ const props = defineProps({
   workspaceMembers: Array,
 })
 
-const emit = defineEmits(['close', 'open-add-member', 'update-member', 'delete-member', 'update-status', 'add-status', 'delete-status', 'reorder-status', 'toggle-theme', 'create-workspace', 'rename-workspace', 'add-workspace-member', 'remove-workspace-member'])
+const emit = defineEmits(['close', 'open-add-member', 'update-member', 'delete-member', 'update-status', 'set-done-status', 'add-status', 'delete-status', 'reorder-status', 'toggle-theme', 'create-workspace', 'rename-workspace', 'add-workspace-member', 'remove-workspace-member'])
 
 const activeTab        = ref('members')
 const editingId        = ref(null)
