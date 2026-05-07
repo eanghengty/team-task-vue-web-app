@@ -2,6 +2,16 @@
 
 All notable changes to SQUAD â€” Team Task Board.
 
+## [3.11.0] - 2026-05-07
+
+### Fixed
+- **Cross-workspace task move activity logging** now writes entries to both source and target workspace activity logs.
+
+### Changed
+- Added workspace-specific logging helper so activity can be inserted into an explicit workspace context.
+- Admin task moves across workspaces now create `task_moved_workspace` activity entries in both workspaces.
+
+---
 ## [3.10.0] - 2026-05-07
 
 ### Added
@@ -365,6 +375,7 @@ All notable changes to SQUAD â€” Team Task Board.
 - Member filter and priority filter.
 - Live clock in header.
 - Seeded sample data (3 members, 5 tasks, 1 reminder).
+
 
 
 

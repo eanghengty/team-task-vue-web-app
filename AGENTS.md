@@ -287,9 +287,11 @@ user action (component event)
 State is persisted in **Supabase Postgres**. See [SUPABASE.md](./SUPABASE.md) for full database documentation.
 
 
-### Latest updates (v3.10.0)
+### Latest updates (v3.11.0)
 
 - Post-login is now workspace-first: users must create/select a workspace from `WorkspaceGateView` before app shell renders.
 - Done state is configurable by admins via `task_statuses.is_done` (not tied to last column order).
 - Workspace owners (non-admin) can manage workspace members in Settings.
 - Admins can move tasks across workspaces from task edit; linked reminders move with the task.
+- Cross-workspace moves are logged in both source and target workspace activity logs (`task_moved_workspace`).
+

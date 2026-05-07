@@ -635,16 +635,20 @@ function openDetail(task) {
   modals.detail = true
 }
 
-async function logActivity(action, entityType, entityId, message) {
-  if (!currentWorkspaceId.value) return
+async function logActivityForWorkspace(workspaceId, action, entityType, entityId, message) {
+  if (!workspaceId) return
   await supabase.from('activity_logs').insert({
-    workspace_id: currentWorkspaceId.value,
+    workspace_id: workspaceId,
     actor_id:    currentUser.value?.id ?? null,
     action,
     entity_type: entityType,
     entity_id:   String(entityId),
     message,
   })
+}
+
+async function logActivity(action, entityType, entityId, message) {
+  await logActivityForWorkspace(currentWorkspaceId.value, action, entityType, entityId, message)
 }
 
 async function addTask() {
@@ -737,6 +741,7 @@ async function editTask({ id, title, desc, priority, due, status, workspaceId })
     ? (workspaceId || t.workspaceId || currentWorkspaceId.value)
     : t.workspaceId
 
+  const sourceWorkspaceId = t.workspaceId
   const movedWorkspace = targetWorkspaceId !== t.workspaceId
   Object.assign(t, { title, desc, priority, due, status, workspaceId: targetWorkspaceId })
   if (detailTask.value?.id === id) detailTask.value = { ...t }
@@ -759,6 +764,25 @@ async function editTask({ id, title, desc, priority, due, status, workspaceId })
       .from('reminders')
       .update({ workspace_id: targetWorkspaceId })
       .eq('task_id', id)
+
+    const sourceWorkspaceName = workspaces.value.find(w => w.id === sourceWorkspaceId)?.name ?? 'Unknown Workspace'
+    const targetWorkspaceName = workspaces.value.find(w => w.id === targetWorkspaceId)?.name ?? 'Unknown Workspace'
+    await Promise.all([
+      logActivityForWorkspace(
+        sourceWorkspaceId,
+        'task_moved_workspace',
+        'task',
+        id,
+        `${currentUser.value.name} moved task "${title}" from ${sourceWorkspaceName} to ${targetWorkspaceName}`
+      ),
+      logActivityForWorkspace(
+        targetWorkspaceId,
+        'task_moved_workspace',
+        'task',
+        id,
+        `${currentUser.value.name} moved task "${title}" from ${sourceWorkspaceName} to ${targetWorkspaceName}`
+      ),
+    ])
 
     reminders.value = reminders.value.filter(r => r.taskId !== id)
     tasks.value = tasks.value.filter(task => task.id !== id)
