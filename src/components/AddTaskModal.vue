@@ -1,6 +1,22 @@
 <template>
   <div class="modal-overlay" :class="{ open }" @click.self="!submitting && $emit('close')">
-    <div class="modal p-0">
+    <div
+      v-if="submitting"
+      class="w-[min(92vw,360px)] rounded-2xl px-5 py-5 flex flex-col items-center gap-2"
+      style="background:var(--surface2);border:1px solid var(--border);box-shadow:0 16px 42px rgba(0,0,0,0.38)"
+    >
+      <iframe
+        src="https://lottie.host/embed/01a8e34a-800c-479e-9ad8-aaa8e0a4156c/WxIgIY3KeE.lottie"
+        title="Assigning Task Animation"
+        style="width:180px;height:180px;border:0;background:transparent"
+        allowfullscreen
+      ></iframe>
+      <p class="text-sm text-center px-2 max-w-[290px]" style="color:var(--accent)">
+        {{ displayLoadingQuote }}
+      </p>
+    </div>
+
+    <div v-else class="modal p-0">
       <div class="p-5" style="border-bottom:1px solid var(--border)">
         <div class="flex items-center justify-between">
           <span class="font-display text-2xl tracking-wider">NEW TASK</span>
@@ -9,23 +25,7 @@
           </button>
         </div>
       </div>
-      <div class="p-5 flex flex-col gap-4 relative">
-        <div
-          v-if="submitting"
-          class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-b-2xl"
-          style="background:rgba(13,13,13,0.86)"
-        >
-          <iframe
-            src="https://lottie.host/embed/01a8e34a-800c-479e-9ad8-aaa8e0a4156c/WxIgIY3KeE.lottie"
-            title="Assigning Task Animation"
-            style="width:180px;height:180px;border:0;background:transparent"
-            allowfullscreen
-          ></iframe>
-          <p class="text-sm text-center px-6 max-w-md" style="color:var(--accent)">
-            {{ displayLoadingQuote }}
-          </p>
-        </div>
-
+      <div class="p-5 flex flex-col gap-4">
         <div>
           <label class="block text-xs font-mono mb-2" style="color:var(--muted)">TASK TITLE *</label>
           <input class="field" :class="{ shake: shaking.taskTitle }" v-model="form.title" :disabled="submitting" placeholder="What needs to be done?" />

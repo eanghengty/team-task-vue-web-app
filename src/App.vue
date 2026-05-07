@@ -34,6 +34,26 @@
       @logout="logout"
     />
     <ToastContainer :toasts="toasts" @remove="removeToast" />
+    <div
+      v-if="taskDoneSubmitting"
+      class="fixed inset-0 z-[320] flex items-center justify-center"
+      style="background:rgba(5,5,5,0.72)"
+    >
+      <div
+        class="w-[min(92vw,360px)] rounded-2xl px-5 py-5 flex flex-col items-center gap-2"
+        style="background:var(--surface2);border:1px solid var(--border);box-shadow:0 16px 42px rgba(0,0,0,0.38)"
+      >
+        <iframe
+          src="https://lottie.host/embed/fa739806-f75d-48ec-818f-a32db3896a8b/rXx8MECluZ.lottie"
+          title="Completing Task Animation"
+          style="width:180px;height:180px;border:0;background:transparent"
+          allowfullscreen
+        ></iframe>
+        <p class="text-sm text-center px-2 max-w-[290px]" style="color:var(--accent)">
+          {{ doneLoadingQuote }}
+        </p>
+      </div>
+    </div>
     <StatsBar :tasks="tasks" :members="members" @open-modal="openModal" />
     <TabBar
       v-model:currentTab="currentTab"
@@ -258,6 +278,8 @@ const detailTask        = ref(null)
 const loading           = ref(true)
 const taskSubmitting    = ref(false)
 const taskLoadingQuote  = ref('Progress is built one small step at a time.')
+const taskDoneSubmitting = ref(false)
+const doneLoadingQuote  = ref('Progress is built one small step at a time.')
 const showSettings      = ref(false)
 const showNotifications = ref(false)
 const isDark            = ref(localStorage.getItem('squad_theme') !== 'light')
@@ -529,6 +551,25 @@ async function setRandomTaskLoadingQuote() {
   const pool = motivationQuotes.value.length ? motivationQuotes.value : fallbackQuotes
   const idx = Math.floor(Math.random() * pool.length)
   taskLoadingQuote.value = pool[idx]
+}
+
+async function setRandomDoneLoadingQuote() {
+  if (!motivationQuotes.value.length) await fetchMotivationQuotes()
+  const pool = motivationQuotes.value.length ? motivationQuotes.value : fallbackQuotes
+  const idx = Math.floor(Math.random() * pool.length)
+  doneLoadingQuote.value = pool[idx]
+}
+
+async function withDoneLoadingOverlay(work) {
+  await setRandomDoneLoadingQuote()
+  taskDoneSubmitting.value = true
+  const minimumDelay = new Promise(resolve => setTimeout(resolve, 7000))
+  try {
+    await work()
+    await minimumDelay
+  } finally {
+    taskDoneSubmitting.value = false
+  }
 }
 
 async function notifyAdmins(type, message, taskId) {
@@ -1000,6 +1041,7 @@ async function onCommentAdded({ taskId, taskTitle }) {
 }
 
 async function toggleDone(id) {
+  if (taskDoneSubmitting.value) return
   if (!canAccessCurrentWorkspace()) return
   const t = tasks.value.find(t => t.id === id)
   if (!t) return
@@ -1012,7 +1054,7 @@ async function toggleDone(id) {
       showToast('Permission Denied', 'You can only mark your own tasks as done', 'red')
       return
     }
-    // User requesting to reopen another user's task → send approval request
+    // User requesting to reopen another user's task -> send approval request
     const assignee = members.value.find(m => m.id === t.assigneeId)
     await supabase.from('notifications').insert({
       workspace_id: currentWorkspaceId.value,
@@ -1030,30 +1072,40 @@ async function toggleDone(id) {
   const firstKey  = columns.value[0]?.status ?? 'todo'
   const newDone   = !t.done
   const newStatus = newDone ? doneKey : t.status === doneKey ? firstKey : t.status
-  t.done   = newDone
-  t.status = newStatus
-  if (detailTask.value?.id === id) detailTask.value = { ...t }
 
-  const { error } = await supabase.from('tasks')
-    .update({ done: newDone, status: newStatus })
-    .eq('id', id)
-  if (error) showToast('Error', 'Could not update task', 'red')
-  else {
-    logActivity('task_status_changed', 'task', id,
-      `${currentUser.value.name} marked "${t.title}" as ${newDone ? 'done' : 'reopened'}`)
-    // Admin acting on someone else's task → notify the assignee
-    if (isAdmin && t.assigneeId && t.assigneeId !== currentUser.value.id) {
-      const action = newDone ? 'marked your task as done' : 'reopened your task'
-      await supabase.from('notifications').insert({
-        workspace_id: currentWorkspaceId.value,
-        member_id: t.assigneeId,
-        sender_id: currentUser.value.id,
-        type:      newDone ? 'task_marked_done' : 'task_reopened',
-        message:   `${currentUser.value.name} ${action}: "${t.title}"`,
-        task_id:   t.id,
-      })
+  const applyToggleDone = async () => {
+    t.done   = newDone
+    t.status = newStatus
+    if (detailTask.value?.id === id) detailTask.value = { ...t }
+
+    const { error } = await supabase.from('tasks')
+      .update({ done: newDone, status: newStatus })
+      .eq('id', id)
+    if (error) showToast('Error', 'Could not update task', 'red')
+    else {
+      logActivity('task_status_changed', 'task', id,
+        `${currentUser.value.name} marked "${t.title}" as ${newDone ? 'done' : 'reopened'}`)
+      // Admin acting on someone else's task -> notify the assignee
+      if (isAdmin && t.assigneeId && t.assigneeId !== currentUser.value.id) {
+        const action = newDone ? 'marked your task as done' : 'reopened your task'
+        await supabase.from('notifications').insert({
+          workspace_id: currentWorkspaceId.value,
+          member_id: t.assigneeId,
+          sender_id: currentUser.value.id,
+          type:      newDone ? 'task_marked_done' : 'task_reopened',
+          message:   `${currentUser.value.name} ${action}: "${t.title}"`,
+          task_id:   t.id,
+        })
+      }
     }
   }
+
+  if (newDone) {
+    await withDoneLoadingOverlay(applyToggleDone)
+    return
+  }
+
+  await applyToggleDone()
 }
 
 async function deleteTask(id) {
@@ -1218,6 +1270,7 @@ async function reorderColumn(status, direction) {
 }
 
 async function onDrop(status) {
+  if (taskDoneSubmitting.value) return
   if (!canAccessCurrentWorkspace()) return
   if (!dragTaskId.value) return
   const t = tasks.value.find(t => t.id === dragTaskId.value)
@@ -1228,28 +1281,40 @@ async function onDrop(status) {
     dragOver.value   = null
     return
   }
-  const isDone = status === doneStatusKey.value
-  t.status = status
-  t.done   = isDone
-  dragTaskId.value = null
-  dragOver.value   = null
 
-  const { error } = await supabase.from('tasks')
-    .update({ status, done: isDone })
-    .eq('id', t.id)
-  if (error) showToast('Error', 'Could not move task', 'red')
-  else {
-    const colLabel = columns.value.find(c => c.status === status)?.label ?? status
-    logActivity('task_status_changed', 'task', t.id,
-      `${currentUser.value.name} moved "${t.title}" to ${colLabel}`)
-    if (currentUser.value.access !== 'admin') {
-      await notifyAdmins(
-        'task_status_changed',
-        `${currentUser.value.name} moved "${t.title}" to ${colLabel}`,
-        t.id,
-      )
+  const isDone = status === doneStatusKey.value
+  const wasDone = !!t.done
+
+  const applyDrop = async () => {
+    t.status = status
+    t.done   = isDone
+    dragTaskId.value = null
+    dragOver.value   = null
+
+    const { error } = await supabase.from('tasks')
+      .update({ status, done: isDone })
+      .eq('id', t.id)
+    if (error) showToast('Error', 'Could not move task', 'red')
+    else {
+      const colLabel = columns.value.find(c => c.status === status)?.label ?? status
+      logActivity('task_status_changed', 'task', t.id,
+        `${currentUser.value.name} moved "${t.title}" to ${colLabel}`)
+      if (currentUser.value.access !== 'admin') {
+        await notifyAdmins(
+          'task_status_changed',
+          `${currentUser.value.name} moved "${t.title}" to ${colLabel}`,
+          t.id,
+        )
+      }
     }
   }
+
+  if (isDone && !wasDone) {
+    await withDoneLoadingOverlay(applyDrop)
+    return
+  }
+
+  await applyDrop()
 }
 
 async function sendWorkspaceMessage(payload) {
@@ -1485,3 +1550,5 @@ function triggerShake(key) {
   setTimeout(() => { shaking[key] = false }, 400)
 }
 </script>
+
+

@@ -2,6 +2,25 @@
 
 All notable changes to SQUAD — Team Task Board.
 
+## [3.12.7] - 2026-05-07
+
+### Added
+- **Done transition loading flow** for task completion actions:
+  - marking done from task controls (`toggleDone`)
+  - dragging a task into the configured done column (`onDrop`)
+- Done transition loader uses a **minimum 7-second** duration with Lottie + motivational quote.
+
+### Changed
+- Done-loading quote source now follows assignment behavior: prefers Supabase `motivational_quotes`, with in-app fallback quotes.
+- Done-loading UI updated to a **compact centered loader card** (matching assignment loading style) instead of a full-screen-only presentation.
+- Assignment loader in `AddTaskModal` now uses the same compact centered loader card style as done-loading.
+- Assignment submit state now renders **loader-only UI** (the "NEW TASK" form container is hidden during submit loading).
+
+### Fixed
+- Corrected done-loading animation URL to the Lottie **embed** endpoint so the animation renders in-app instead of downloading a `.lottie` file.
+
+---
+
 ## [3.12.6] - 2026-05-07
 
 ### Added

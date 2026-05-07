@@ -116,6 +116,8 @@ The app uses a simple custom auth layer — **no Supabase Auth**. Credentials ar
 | `showNotifications` | `boolean` ref | Controls `NotificationPanel` open/close |
 | `taskSubmitting` | `boolean` ref | Controls AddTaskModal loading/disabled state during task assignment |
 | `taskLoadingQuote` | `string` ref | Current motivational quote shown under assignment Lottie |
+| `taskDoneSubmitting` | `boolean` ref | Controls done-state loading overlay during mark-done / drag-to-done actions |
+| `doneLoadingQuote` | `string` ref | Current motivational quote shown under done-loading Lottie |
 | `isDark` | `boolean` ref | `true` = dark mode (default); persisted in `localStorage` as `squad_theme` |
 | `modals` | reactive object | `add / reminder / detail / member` boolean flags |
 | `form / remForm / memberForm` | reactive objects | Controlled inputs for each modal |
@@ -135,6 +137,8 @@ The app uses a simple custom auth layer — **no Supabase Auth**. Credentials ar
 | `fetchChatReadState(workspaceId, memberId)` | Fetches chat read cursor (`last_read_at`) for unread count calculation |
 | `fetchMotivationQuotes()` | Fetches motivational quotes from `motivational_quotes` table |
 | `setRandomTaskLoadingQuote()` | Picks a random quote (Supabase first, fallback pool if unavailable) |
+| `setRandomDoneLoadingQuote()` | Picks a random quote (Supabase first, fallback pool if unavailable) for done-loading UI |
+| `withDoneLoadingOverlay(work)` | Shows done-loading UI for a minimum 7 seconds, executes `work`, then hides loading |
 | `fetchTasks()` | Fetches all tasks; available for manual refresh if needed |
 | `startRealtimeSync()` | Opens three Supabase Realtime WebSocket channels: `db-tasks`, `db-notifications`, and `db-workspace-messages` (workspace-scoped). Patches local arrays in-place |
 | `stopRealtimeSync()` | Removes all active Realtime channels |
@@ -145,7 +149,7 @@ The app uses a simple custom auth layer — **no Supabase Auth**. Credentials ar
 | `addTask()` | Insert task; if `user` role assigns to another member → `confirmed = false` + sends `task_assignment_request` to assignee + notifies admins; otherwise sends `task_assigned` to assignee + notifies admins |
 | `editTask({ id, title, desc, priority, due, status })` | Updates task fields; guarded — non-admin non-assignee gets error toast and early return |
 | `onCommentAdded({ taskId, taskTitle })` | Logs `task_commented` activity; if actor is a user role, notifies all admins via `notifyAdmins` |
-| `toggleDone(id)` | Permission-gated: admin → immediate + notifies assignee; own task → immediate; user marking other's done → blocked; user reopening other's task → sends `task_reopen_request` to assignee |
+| `toggleDone(id)` | Permission-gated: user marking other's done is blocked; user reopening other's task sends `task_reopen_request`; transitions into done show 7-second Lottie+quote loading before commit |
 | `deleteTask(id)` | Delete task + linked reminders locally and in DB; logs activity |
 | `addReminder()` | Insert standalone reminder; logs activity |
 | `deleteReminder(id)` | Delete reminder |
@@ -154,7 +158,7 @@ The app uses a simple custom auth layer — **no Supabase Auth**. Credentials ar
 | `deleteMember(id)` | Delete member; logs activity |
 | `updateColumn / addStatus / deleteStatus` | Manage `task_statuses` rows |
 | `reorderColumn(status, direction)` | Reorder kanban columns: swaps positions and renumbers all `sort_order` values sequentially (0, 1, 2...); direction is 'up' or 'down'; shows success toast on completion |
-| `onDrop(status)` | Kanban drag-and-drop; guarded — non-admin non-assignee blocked; logs activity; notifies admins if actor is user role |
+| `onDrop(status)` | Kanban drag-and-drop; guarded — non-admin non-assignee blocked; drag-to-done transitions show 7-second Lottie+quote loading before commit; logs activity; notifies admins if actor is user role |
 | `sendWorkspaceMessage(payload)` | Sends a workspace chat/reply message with validation (`trim`, max 2000 chars), appends locally, fans out workspace notifications, logs activity |
 | `notifyWorkspaceMembers(type, message, workspaceId, senderId)` | Sends notifications to all members in the workspace except the sender |
 | `deleteWorkspaceMessage(messageId)` | Admin-only chat moderation: delete one message with rollback on failure |
@@ -240,7 +244,7 @@ The app uses a simple custom auth layer — **no Supabase Auth**. Credentials ar
 
 - Accepts `currentUser`, `submitting`, and `loadingQuote` props.
 - When `currentUser.access === 'user'` and `form.assigneeId !== currentUser.id`, shows an inline notice: "The assignee will receive a notification to confirm this task."
-- During submit, shows a full modal loading overlay with Lottie animation and a motivational quote, and disables close/inputs/buttons.
+- During submit, the form modal is replaced by a compact centered loading card (Lottie + motivational quote), and the usual modal content is hidden.
 
 ### TabBar
 
@@ -314,6 +318,7 @@ The app uses a simple custom auth layer — **no Supabase Auth**. Credentials ar
 - **Reload hydration** — when a saved workspace exists, startup now fetches full workspace data and starts realtime immediately (without requiring a manual workspace switch).
 - **Task assignment loading** — task creation now enforces a minimum 7-second loading state with Lottie animation before modal closes.
 - **Motivational quote loading text** — assignment loading overlay shows only a motivational quote (no "Assigning task..." text), randomized from Supabase quotes when available.
+- **Done transition loading** — marking a task done (checkbox/button) or dragging a task into the done column shows a 7-second Lottie + motivational quote loading UI before write completion. Reopen actions are immediate.
 - **Reminder interval** — still runs every 15 s but now only checks for due reminders; no longer fetches tasks or notifications.
 - **Tab views** use `v-if` — no entry animations on per-item elements (causes flicker on tab switch).
 - **Drag-and-drop** — native HTML5 events. `dragTaskId` tracks in-flight card; `dragOver` drives highlight. Cards are non-draggable (`:draggable="false"`) for tasks the current user does not own. Status change logged after drop.
@@ -332,8 +337,15 @@ user action (component event)
 
 State is persisted in **Supabase Postgres**. See [SUPABASE.md](./SUPABASE.md) for full database documentation.
 
+### Latest updates (v3.12.7)
 
-### Latest updates (v3.12.6)
+- Added done-transition loading UX: mark-done and drag-to-done now use a minimum 7-second loading state with Lottie and motivational quote.
+- Done loading quote source matches assignment flow (Supabase `motivational_quotes` first, fallback quote pool).
+- Fixed done loading Lottie URL to use embed endpoint so animation renders in-app (no file download).
+- Updated AddTaskModal submit loading UI to match done-loading card styling.
+- Updated AddTaskModal so submit state renders only the loading UI (no underlying "NEW TASK" form container).
+
+### Previous updates (v3.12.6)
 
 - Added `motivational_quotes` support with migration `009_motivational_quotes.sql` (10 fixed seeded quotes).
 - AddTaskModal loading overlay now displays a random motivational quote under Lottie during task assignment.
