@@ -19,7 +19,7 @@
         style="border:1px solid var(--border);background:var(--surface)"
       >
         <div class="flex items-center justify-between gap-3 mb-1">
-          <div class="text-sm font-semibold" :style="{ color: memberColor(msg.senderId) }">
+          <div class="text-sm font-semibold" style="color:var(--text)">
             {{ memberName(msg.senderId) }}
           </div>
           <time class="font-mono text-[11px]" style="color:var(--muted)">
@@ -59,10 +59,6 @@ const listRef = ref(null)
 
 function memberName(senderId) {
   return props.members.find(m => m.id === senderId)?.name ?? 'Unknown Member'
-}
-
-function memberColor(senderId) {
-  return props.members.find(m => m.id === senderId)?.color ?? 'var(--accent)'
 }
 
 function formatTime(value) {
