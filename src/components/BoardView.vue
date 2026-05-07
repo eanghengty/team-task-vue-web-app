@@ -12,7 +12,7 @@
           <span class="text-sm font-semibold">{{ col.label }}</span>
           <span class="ml-auto badge" :style="dotToBadgeStyle(col.dot)">{{ tasksByStatus(col.status).length }}</span>
         </div>
-        <div class="p-3 flex flex-col gap-2">
+        <div class="p-3 h-[640px] overflow-y-auto space-y-2">
           <div v-if="tasksByStatus(col.status).length === 0"
             class="text-center py-6 text-xs font-mono" style="color:var(--muted)">drop here</div>
           <TaskCard

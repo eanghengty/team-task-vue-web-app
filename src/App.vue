@@ -309,6 +309,16 @@ const fallbackQuotes = [
   'Keep moving - every task completed matters.',
   'Great outcomes come from steady execution.',
 ]
+const lottieUrls = [
+  'https://lottie.host/embed/01a8e34a-800c-479e-9ad8-aaa8e0a4156c/WxIgIY3KeE.lottie',
+  'https://lottie.host/embed/fa739806-f75d-48ec-818f-a32db3896a8b/rXx8MECluZ.lottie',
+]
+const startupCdnUrls = [
+  ...lottieUrls,
+  'https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Space+Grotesk:wght@300;400;500;600;700&display=swap',
+  'https://fonts.googleapis.com/icon?family=Material+Icons',
+  'https://unpkg.com/@dotlottie/player-component@2.7.12/dist/dotlottie-player.mjs',
+]
 
 const modals     = reactive({ add: false, reminder: false, detail: false, member: false, workspace: false })
 const form       = reactive({ title: '', desc: '', assigneeId: '', priority: 'medium', due: '', status: 'todo', reminderDt: '' })
@@ -403,6 +413,13 @@ function mapWorkspace(row) {
   }
 }
 
+function moveTaskToTop(taskId) {
+  const idx = tasks.value.findIndex(t => t.id === taskId)
+  if (idx <= 0) return
+  const [task] = tasks.value.splice(idx, 1)
+  tasks.value.unshift(task)
+}
+
 // ── computed ──────────────────────────────────────────────────────────────────
 const filteredTasks = computed(() => tasks.value.filter(t =>
   (!filterMember.value   || t.assigneeId === filterMember.value) &&
@@ -436,7 +453,6 @@ const canEnterApp = computed(() =>
 
 // ── data fetching ─────────────────────────────────────────────────────────────
 async function fetchAll() {
-  loading.value = true
   const [mRes, sRes] = await Promise.all([
     supabase.from('members').select('*').order('created_at'),
     supabase.from('task_statuses').select('*').order('sort_order'),
@@ -453,7 +469,6 @@ async function fetchAll() {
     const suggested = workspaces.value.find(w => w.id === suggestedWorkspaceId.value)
     if (suggested) currentWorkspaceId.value = suggested.id
   }
-  loading.value = false
 }
 
 async function fetchTasks() {
@@ -572,6 +587,27 @@ async function withDoneLoadingOverlay(work) {
   }
 }
 
+async function warmStartupCdnCache() {
+  if (typeof window === 'undefined' || !('caches' in window)) return
+  try {
+    const cache = await caches.open('squad-cdn-v1')
+    await Promise.all(
+      startupCdnUrls.map(async (url) => {
+        const hit = await cache.match(url)
+        if (hit) return
+        const res = await fetch(url, { cache: 'force-cache', mode: 'no-cors' })
+        if (res.ok || res.type === 'opaque') await cache.put(url, res.clone())
+      })
+    )
+  } catch (error) {
+    console.warn('[startup cdn warmup]', error?.message ?? error)
+  }
+}
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
 async function notifyAdmins(type, message, taskId) {
   const adminIds = members.value
     .filter(m => m.access === 'admin' && m.id !== currentUser.value.id)
@@ -626,15 +662,18 @@ function startRealtimeSync() {
     .on('postgres_changes', {
       event: 'INSERT', schema: 'public', table: 'tasks', filter: `workspace_id=eq.${currentWorkspaceId.value}`,
     }, ({ new: row }) => {
-      if (!tasks.value.find(t => t.id === row.id)) tasks.value.push(mapTask(row))
+      if (!tasks.value.find(t => t.id === row.id)) tasks.value.unshift(mapTask(row))
     })
     .on('postgres_changes', {
       event: 'UPDATE', schema: 'public', table: 'tasks', filter: `workspace_id=eq.${currentWorkspaceId.value}`,
     }, ({ new: row }) => {
       const idx = tasks.value.findIndex(t => t.id === row.id)
       if (idx !== -1) {
-        tasks.value[idx] = mapTask(row)
-        if (detailTask.value?.id === row.id) detailTask.value = mapTask(row)
+        const previous = tasks.value[idx]
+        const updated = mapTask(row)
+        tasks.value[idx] = updated
+        if (!previous.done && updated.done) moveTaskToTop(updated.id)
+        if (detailTask.value?.id === row.id) detailTask.value = updated
       }
     })
     .on('postgres_changes', {
@@ -712,32 +751,47 @@ function stopRealtimeSync() {
   if (chatChannel) { supabase.removeChannel(chatChannel); chatChannel = null }
 }
 
-function startApp() {
+async function startApp() {
+  loading.value = true
   clockInterval = setInterval(() => {
     clock.value = new Date().toLocaleTimeString('en-US', { hour12: false })
   }, 1000)
   clock.value = new Date().toLocaleTimeString('en-US', { hour12: false })
 
-  fetchAll().then(async () => {
-    // Restore full workspace context on reload when a workspace was already chosen.
-    if (sessionWorkspaceChosen.value && currentWorkspaceId.value) {
-      await fetchWorkspaceData(currentWorkspaceId.value)
-      stopRealtimeSync()
-      startRealtimeSync()
-      if (currentTab.value === 'chat') await markChatRead()
-    }
-
-    reminderInterval = setInterval(async () => {
-      const now = new Date()
-      for (const r of reminders.value) {
-        if (!r.fired && new Date(r.datetime) <= now) {
-          r.fired = true
-          showToast('Reminder', r.title, 'yellow', 8000)
-          await supabase.from('reminders').update({ fired: true }).eq('id', r.id)
-        }
+  try {
+    const bootstrapPromise = (async () => {
+      await fetchAll()
+      // Restore full workspace context on reload when a workspace was already chosen.
+      if (sessionWorkspaceChosen.value && currentWorkspaceId.value) {
+        await fetchWorkspaceData(currentWorkspaceId.value)
+        stopRealtimeSync()
+        startRealtimeSync()
+        if (currentTab.value === 'chat') await markChatRead()
       }
-    }, 15000)
-  })
+    })()
+
+    const warmupPromise = warmStartupCdnCache()
+    await Promise.all([
+      delay(1000),
+      bootstrapPromise,
+      Promise.race([warmupPromise, delay(5000)]),
+    ])
+  } catch (error) {
+    console.error('[startApp]', error)
+  } finally {
+    loading.value = false
+  }
+
+  reminderInterval = setInterval(async () => {
+    const now = new Date()
+    for (const r of reminders.value) {
+      if (!r.fired && new Date(r.datetime) <= now) {
+        r.fired = true
+        showToast('Reminder', r.title, 'yellow', 8000)
+        await supabase.from('reminders').update({ fired: true }).eq('id', r.id)
+      }
+    }
+  }, 15000)
 }
 
 function stopApp() {
@@ -908,7 +962,7 @@ async function addTask() {
   }
 
   const task = mapTask(data)
-  tasks.value.push(task)
+  tasks.value.unshift(task)
 
   if (form.reminderDt) {
     const { data: rData, error: rErr } = await supabase.from('reminders').insert({
@@ -1083,6 +1137,7 @@ async function toggleDone(id) {
       .eq('id', id)
     if (error) showToast('Error', 'Could not update task', 'red')
     else {
+      if (newDone) moveTaskToTop(id)
       logActivity('task_status_changed', 'task', id,
         `${currentUser.value.name} marked "${t.title}" as ${newDone ? 'done' : 'reopened'}`)
       // Admin acting on someone else's task -> notify the assignee
@@ -1296,6 +1351,7 @@ async function onDrop(status) {
       .eq('id', t.id)
     if (error) showToast('Error', 'Could not move task', 'red')
     else {
+      if (isDone && !wasDone) moveTaskToTop(t.id)
       const colLabel = columns.value.find(c => c.status === status)?.label ?? status
       logActivity('task_status_changed', 'task', t.id,
         `${currentUser.value.name} moved "${t.title}" to ${colLabel}`)
