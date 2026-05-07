@@ -24,10 +24,12 @@
       :clock="clock"
       :current-user="currentUser"
       :unread-count="unreadCount"
+      :chat-unread-count="chatUnreadCount"
       :workspaces="workspaces"
       :current-workspace-id="currentWorkspaceId"
       @open-modal="openModal"
       @open-settings="showSettings = true"
+      @open-chat="currentTab = 'chat'"
       @open-notifications="showNotifications = !showNotifications"
       @select-workspace="selectWorkspace"
       @open-workspace-modal="modals.workspace = true"
@@ -41,6 +43,7 @@
       v-model:filterPriority="filterPriority"
       :members="members"
       :pending-count="pendingReminders.length"
+      :chat-unread-count="chatUnreadCount"
       :current-user="currentUser"
     />
 
@@ -70,6 +73,12 @@
           @open-detail="openDetail"
           @toggle-done="toggleDone"
           @delete-task="deleteTask"
+        />
+        <ChatView v-if="currentTab === 'chat'"
+          :messages="chatMessages"
+          :members="members"
+          @send-message="sendWorkspaceMessage"
+          @mark-read="markChatRead"
         />
         <RemindersView v-if="currentTab === 'reminders'"
           :reminders="reminders"
@@ -167,7 +176,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { uid, labelToKey } from './utils.js'
 import { supabase } from './lib/supabase.js'
 import LoginView        from './components/LoginView.vue'
@@ -177,6 +186,7 @@ import StatsBar         from './components/StatsBar.vue'
 import TabBar           from './components/TabBar.vue'
 import BoardView        from './components/BoardView.vue'
 import ListView         from './components/ListView.vue'
+import ChatView         from './components/ChatView.vue'
 import RemindersView    from './components/RemindersView.vue'
 import ActivityLogView  from './components/ActivityLogView.vue'
 import AddTaskModal     from './components/AddTaskModal.vue'
@@ -227,6 +237,8 @@ function logout() {
   sessionWorkspaceChosen.value = false
   tasks.value         = []
   reminders.value     = []
+  chatMessages.value  = []
+  chatLastReadAt.value = null
   columns.value       = []
   notifications.value = []
   loading.value       = true
@@ -253,6 +265,8 @@ const workspaceMembers = ref([])
 const currentWorkspaceId = ref('')
 const tasks         = ref([])
 const reminders     = ref([])
+const chatMessages  = ref([])
+const chatLastReadAt = ref(null)
 const notifications = ref([])
 const toasts        = ref([])
 
@@ -329,6 +343,16 @@ function mapNotification(row) {
   }
 }
 
+function mapChatMessage(row) {
+  return {
+    id: row.id,
+    workspaceId: row.workspace_id,
+    senderId: row.sender_id,
+    content: row.content,
+    createdAt: row.created_at,
+  }
+}
+
 function mapWorkspace(row) {
   return {
     id: row.id,
@@ -346,6 +370,13 @@ const filteredTasks = computed(() => tasks.value.filter(t =>
 
 const pendingReminders = computed(() => reminders.value.filter(r => !r.fired))
 const unreadCount      = computed(() => notifications.value.filter(n => !n.read).length)
+const chatUnreadCount  = computed(() => {
+  const lastRead = chatLastReadAt.value ? new Date(chatLastReadAt.value).getTime() : 0
+  return chatMessages.value.filter(m =>
+    m.senderId !== currentUser.value?.id &&
+    new Date(m.createdAt).getTime() > lastRead
+  ).length
+})
 const workspaceAssignableMembers = computed(() => {
   const memberIds = new Set(workspaceMembers.value.map(wm => wm.member_id))
   return members.value.filter(m => memberIds.has(m.id) || m.access === 'admin')
@@ -409,6 +440,8 @@ async function fetchWorkspaces() {
 
 async function fetchWorkspaceData(workspaceId) {
   if (!workspaceId) return
+  chatMessages.value = []
+  chatLastReadAt.value = null
   const [tRes, rRes, wmRes] = await Promise.all([
     supabase.from('tasks').select('*').eq('workspace_id', workspaceId).order('created_at'),
     supabase.from('reminders').select('*').eq('workspace_id', workspaceId).order('created_at'),
@@ -417,7 +450,11 @@ async function fetchWorkspaceData(workspaceId) {
   tasks.value = (tRes.data ?? []).map(mapTask)
   reminders.value = (rRes.data ?? []).map(mapReminder)
   workspaceMembers.value = wmRes.data ?? []
-  await fetchNotifications()
+  await Promise.all([
+    fetchNotifications(),
+    fetchWorkspaceMessages(workspaceId),
+    fetchChatReadState(workspaceId, currentUser.value?.id),
+  ])
 }
 
 async function fetchNotifications() {
@@ -430,6 +467,29 @@ async function fetchNotifications() {
     .order('created_at', { ascending: false })
     .limit(50)
   if (data) notifications.value = data.map(mapNotification)
+}
+
+async function fetchWorkspaceMessages(workspaceId) {
+  if (!workspaceId) return
+  const { data } = await supabase
+    .from('workspace_messages')
+    .select('*')
+    .eq('workspace_id', workspaceId)
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(100)
+  chatMessages.value = (data ?? []).map(mapChatMessage).reverse()
+}
+
+async function fetchChatReadState(workspaceId, memberId) {
+  if (!workspaceId || !memberId) return
+  const { data } = await supabase
+    .from('workspace_chat_reads')
+    .select('last_read_at')
+    .eq('workspace_id', workspaceId)
+    .eq('member_id', memberId)
+    .maybeSingle()
+  chatLastReadAt.value = data?.last_read_at ?? null
 }
 
 async function notifyAdmins(type, message, taskId) {
@@ -450,7 +510,7 @@ async function notifyAdmins(type, message, taskId) {
 }
 
 // ── app lifecycle ─────────────────────────────────────────────────────────────
-let clockInterval, reminderInterval, taskChannel, notifChannel
+let clockInterval, reminderInterval, taskChannel, notifChannel, chatChannel
 
 function startRealtimeSync() {
   if (!currentWorkspaceId.value) return
@@ -505,11 +565,27 @@ function startRealtimeSync() {
       if (err) console.error('[notifications channel]', err)
       else console.log('[notifications channel]', status)
     })
+
+  chatChannel = supabase
+    .channel('db-workspace-messages')
+    .on('postgres_changes', {
+      event: 'INSERT', schema: 'public', table: 'workspace_messages',
+      filter: `workspace_id=eq.${currentWorkspaceId.value}`,
+    }, ({ new: row }) => {
+      if (!chatMessages.value.find(m => m.id === row.id)) {
+        chatMessages.value.push(mapChatMessage(row))
+      }
+    })
+    .subscribe((status, err) => {
+      if (err) console.error('[chat channel]', err)
+      else console.log('[chat channel]', status)
+    })
 }
 
 function stopRealtimeSync() {
   if (taskChannel) { supabase.removeChannel(taskChannel); taskChannel = null }
   if (notifChannel) { supabase.removeChannel(notifChannel); notifChannel = null }
+  if (chatChannel) { supabase.removeChannel(chatChannel); chatChannel = null }
 }
 
 function startApp() {
@@ -518,7 +594,15 @@ function startApp() {
   }, 1000)
   clock.value = new Date().toLocaleTimeString('en-US', { hour12: false })
 
-  fetchAll().then(() => {
+  fetchAll().then(async () => {
+    // Restore full workspace context on reload when a workspace was already chosen.
+    if (sessionWorkspaceChosen.value && currentWorkspaceId.value) {
+      await fetchWorkspaceData(currentWorkspaceId.value)
+      stopRealtimeSync()
+      startRealtimeSync()
+      if (currentTab.value === 'chat') await markChatRead()
+    }
+
     reminderInterval = setInterval(async () => {
       const now = new Date()
       for (const r of reminders.value) {
@@ -555,15 +639,25 @@ onMounted(() => {
   clock.value = new Date().toLocaleTimeString('en-US', { hour12: false })
   const saved = localStorage.getItem('squad_user')
   const savedWorkspace = localStorage.getItem('squad_workspace')
-  if (savedWorkspace) suggestedWorkspaceId.value = savedWorkspace
+  if (savedWorkspace) {
+    suggestedWorkspaceId.value = savedWorkspace
+    currentWorkspaceId.value = savedWorkspace
+  }
   if (saved) {
     currentUser.value = JSON.parse(saved)
-    sessionWorkspaceChosen.value = false
+    sessionWorkspaceChosen.value = !!savedWorkspace
     startApp()
   }
 })
 
 onUnmounted(() => stopApp())
+
+watch(currentTab, async (tab) => {
+  if (tab !== 'chat' || !currentWorkspaceId.value) return
+  await fetchWorkspaceMessages(currentWorkspaceId.value)
+  await fetchChatReadState(currentWorkspaceId.value, currentUser.value?.id)
+  await markChatRead()
+})
 
 // ── actions ───────────────────────────────────────────────────────────────────
 function openModal(type) { modals[type] = true }
@@ -571,12 +665,17 @@ function openModal(type) { modals[type] = true }
 async function selectWorkspace(workspaceId) {
   if (!workspaceId) return
   const changed = workspaceId !== currentWorkspaceId.value
+  if (changed) {
+    chatMessages.value = []
+    chatLastReadAt.value = null
+  }
   currentWorkspaceId.value = workspaceId
   sessionWorkspaceChosen.value = true
   localStorage.setItem('squad_workspace', workspaceId)
   if (changed || !tasks.value.length) await fetchWorkspaceData(workspaceId)
   stopRealtimeSync()
   startRealtimeSync()
+  if (currentTab.value === 'chat') await markChatRead()
 }
 
 function canAccessCurrentWorkspace() {
@@ -1054,6 +1153,42 @@ async function onDrop(status) {
       )
     }
   }
+}
+
+async function sendWorkspaceMessage(content) {
+  if (!canAccessCurrentWorkspace()) return
+  const text = content?.trim() ?? ''
+  if (!text) return
+  if (text.length > 2000) {
+    showToast('Message Too Long', 'Chat messages can be up to 2000 characters', 'red')
+    return
+  }
+
+  const { data, error } = await supabase.from('workspace_messages').insert({
+    workspace_id: currentWorkspaceId.value,
+    sender_id: currentUser.value.id,
+    content: text,
+  }).select().single()
+  if (error) {
+    showToast('Error', 'Could not send message', 'red')
+    return
+  }
+
+  const mapped = mapChatMessage(data)
+  if (!chatMessages.value.find(m => m.id === mapped.id)) chatMessages.value.push(mapped)
+  await markChatRead()
+  await logActivity('chat_message_sent', 'workspace_message', mapped.id, `${currentUser.value.name} sent a chat message`)
+}
+
+async function markChatRead() {
+  if (!currentUser.value || !currentWorkspaceId.value || currentTab.value !== 'chat') return
+  const timestamp = new Date().toISOString()
+  chatLastReadAt.value = timestamp
+  await supabase.from('workspace_chat_reads').upsert({
+    workspace_id: currentWorkspaceId.value,
+    member_id: currentUser.value.id,
+    last_read_at: timestamp,
+  }, { onConflict: 'workspace_id,member_id' })
 }
 
 // ── notifications actions ─────────────────────────────────────────────────────

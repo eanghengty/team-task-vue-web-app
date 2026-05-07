@@ -102,6 +102,23 @@ create table notifications (
   created_at   timestamptz not null default now()
 );
 
+create table workspace_messages (
+  id           uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references workspaces(id) on delete cascade,
+  sender_id    uuid references members(id) on delete set null,
+  content      text not null check (char_length(trim(content)) > 0 and char_length(content) <= 2000),
+  created_at   timestamptz not null default now()
+);
+
+create table workspace_chat_reads (
+  id           uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references workspaces(id) on delete cascade,
+  member_id    uuid not null references members(id) on delete cascade,
+  last_read_at timestamptz not null default now(),
+  created_at   timestamptz not null default now(),
+  unique (workspace_id, member_id)
+);
+
 -- Enable Row Level Security (configure policies to match your auth setup)
 alter table members enable row level security;
 alter table workspaces enable row level security;
@@ -112,6 +129,8 @@ alter table task_statuses enable row level security;
 alter table task_comments enable row level security;
 alter table activity_logs enable row level security;
 alter table notifications enable row level security;
+alter table workspace_messages enable row level security;
+alter table workspace_chat_reads enable row level security;
 
 -- Dev-only open policies — tighten these before going to production
 create policy "allow all members" on members for all using (true) with check (true);
@@ -123,4 +142,6 @@ create policy "allow all task_statuses" on task_statuses for all using (true) wi
 create policy "allow all task_comments" on task_comments for all using (true) with check (true);
 create policy "allow all activity_logs" on activity_logs for all using (true) with check (true);
 create policy "allow all notifications" on notifications for all using (true) with check (true);
+create policy "allow all workspace_messages" on workspace_messages for all using (true) with check (true);
+create policy "allow all workspace_chat_reads" on workspace_chat_reads for all using (true) with check (true);
 

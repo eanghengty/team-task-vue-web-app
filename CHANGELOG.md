@@ -2,6 +2,47 @@
 
 All notable changes to SQUAD â€” Team Task Board.
 
+## [3.12.2] - 2026-05-07
+
+### Added
+- **BoardView fixed Back to Top button** for long board pages.
+- Button appears after vertical scroll threshold and performs smooth scroll to the top of the page.
+
+---
+
+## [3.12.1] - 2026-05-07
+
+### Fixed
+- **Reload data hydration:** when a saved workspace is restored, startup now also fetches full workspace data and starts realtime immediately, so dashboard data is visible without manual workspace switching.
+- **Chat visibility for workspace members:** entering the Chat tab now triggers an explicit message/read-state refresh, so members always see current chat history.
+- **Chat history query correctness:** latest 100 messages are now fetched reliably (DESC query + client-side reverse for chronological rendering).
+
+---
+
+## [3.12.0] - 2026-05-07
+
+### Added
+- **Workspace member chat (v1)** with new `Chat` tab and `ChatView.vue` (workspace group channel, message list, composer).
+- Header chat icon badge and Chat tab unread badge (`chatUnreadCount`).
+- New Supabase migration: `007_workspace_chat.sql`.
+- New tables:
+  - `workspace_messages` (`workspace_id`, `sender_id`, `content`, `created_at`)
+  - `workspace_chat_reads` (`workspace_id`, `member_id`, `last_read_at`)
+- New chat realtime channel (`db-workspace-messages`) scoped by `workspace_id`.
+- Chat actions in `App.vue`: `fetchWorkspaceMessages`, `fetchChatReadState`, `sendWorkspaceMessage`, `markChatRead`.
+- Chat activity logging via `logActivity(... 'chat_message_sent' ...)`.
+
+### Changed
+- `startRealtimeSync()` now opens three channels: tasks, notifications, and workspace chat messages.
+- `stopRealtimeSync()` now removes all three channels.
+- `TabBar` now includes `Chat`; member/priority filters are hidden while Chat is active.
+
+### Fixed
+- **Workspace selection persistence on reload:** app now restores `currentWorkspaceId` and `sessionWorkspaceChosen` from `squad_workspace`, so refresh no longer re-opens workspace gate.
+- **Header chat button wiring:** clicking chat icon now switches `currentTab` to `chat` (`open-chat` emit).
+
+---
+
 ## [3.11.0] - 2026-05-07
 
 ### Fixed

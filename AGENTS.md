@@ -41,11 +41,12 @@ src/
     â”œâ”€â”€ AppHeader.vue           â€” sticky header, clock, New Task / Reminders / Settings / notification bell / user chip / logout
     â”œâ”€â”€ ToastContainer.vue      â€” toast notification list
     â”œâ”€â”€ StatsBar.vue            â€” total / open / overdue stats cards + members chip
-    â”œâ”€â”€ TabBar.vue              â€” board / list / reminders / activity log tabs + filters; activity tab admin-only
+    â”œâ”€â”€ TabBar.vue              â€” board / list / chat / reminders / activity log tabs + filters; activity tab admin-only
     â”œâ”€â”€ BoardView.vue           â€” kanban columns, drag-and-drop orchestration
     â”œâ”€â”€ TaskCard.vue            â€” individual kanban card (draggable); shows PENDING badge for unconfirmed tasks
     â”œâ”€â”€ ListView.vue            â€” sortable table view; shows PENDING badge for unconfirmed tasks
     â”œâ”€â”€ RemindersView.vue       â€” reminders tab list
+    â”œâ”€â”€ ChatView.vue            â€” workspace group chat view (message list + composer)
     â”œâ”€â”€ ActivityLogView.vue     â€” paginated activity log table (admin only); fetches own data from Supabase
     â”œâ”€â”€ AddTaskModal.vue        â€” new task form; shows confirmation notice when user assigns to another member
     â”œâ”€â”€ AddReminderModal.vue    â€” new reminder form modal
@@ -60,7 +61,10 @@ supabase/
     â”œâ”€â”€ 001_add_member_access.sql                  â€” adds access column (admin|user) to members
     â”œâ”€â”€ 002_add_member_credentials.sql             â€” adds email and password columns to members
     â”œâ”€â”€ 003_dynamic_task_statuses.sql              â€” drops status check constraint; creates task_statuses table
-    â””â”€â”€ 004_activity_comments_notifications.sql    â€” adds confirmed to tasks; creates task_comments, activity_logs, notifications tables
+    â”œâ”€â”€ 004_activity_comments_notifications.sql    â€” adds confirmed to tasks; creates task_comments, activity_logs, notifications tables
+    â”œâ”€â”€ 005_workspace_ownership.sql                â€” adds workspaces + workspace_members and scopes core tables
+    â”œâ”€â”€ 006_done_status_config.sql                 â€” adds task_statuses.is_done for configurable done state
+    â””â”€â”€ 007_workspace_chat.sql                     â€” adds workspace_messages + workspace_chat_reads and chat realtime publication
 ```
 
 ### Auth flow
@@ -103,7 +107,10 @@ The app uses a simple custom auth layer â€” **no Supabase Auth**. Credentia
 | `members` | `{ id, name, role, color, access, email, password }[]` | Team members |
 | `columns` | `{ id, status, label, dot, sortOrder }[]` **ref** | Kanban column definitions loaded from `task_statuses` |
 | `notifications` | `{ id, memberId, senderId, type, message, taskId, read, createdAt }[]` **ref** | Per-user notifications; populated on login then kept live via Supabase Realtime |
+| `chatMessages` | `{ id, workspaceId, senderId, content, createdAt }[]` **ref** | Workspace chat timeline (latest 100 messages) |
+| `chatLastReadAt` | `string \| null` **ref** | Last read timestamp for current user in current workspace |
 | `unreadCount` | computed `number` | Count of `notifications` where `read === false`; drives bell badge |
+| `chatUnreadCount` | computed `number` | Count of unseen chat messages in current workspace excluding own messages |
 | `showNotifications` | `boolean` ref | Controls `NotificationPanel` open/close |
 | `isDark` | `boolean` ref | `true` = dark mode (default); persisted in `localStorage` as `squad_theme` |
 | `modals` | reactive object | `add / reminder / detail / member` boolean flags |
@@ -120,9 +127,11 @@ The app uses a simple custom auth layer â€” **no Supabase Auth**. Credentia
 | `stopApp()` | Clears clock and reminder intervals; calls `stopRealtimeSync()` |
 | `fetchAll()` | Loads members, tasks, reminders, task_statuses, notifications in parallel (one-time snapshot on login) |
 | `fetchNotifications()` | Fetches last 50 notifications for `currentUser`; called once in `fetchAll` only |
+| `fetchWorkspaceMessages(workspaceId)` | Fetches latest 100 workspace chat messages (DESC in DB), then reverses client-side for oldest → newest rendering |
+| `fetchChatReadState(workspaceId, memberId)` | Fetches chat read cursor (`last_read_at`) for unread count calculation |
 | `fetchTasks()` | Fetches all tasks; available for manual refresh if needed |
-| `startRealtimeSync()` | Opens two Supabase Realtime WebSocket channels: `db-tasks` (all task events) and `db-notifications` (filtered to `currentUser.id`). Patches local arrays in-place on INSERT/UPDATE/DELETE |
-| `stopRealtimeSync()` | Removes both Realtime channels |
+| `startRealtimeSync()` | Opens three Supabase Realtime WebSocket channels: `db-tasks`, `db-notifications`, and `db-workspace-messages` (workspace-scoped). Patches local arrays in-place |
+| `stopRealtimeSync()` | Removes all active Realtime channels |
 | `notifyAdmins(type, message, taskId)` | Bulk-inserts a notification row for every admin except the current user |
 | `applyTheme(dark)` | Sets `data-theme` attribute on `<html>` to `'dark'` or `'light'` |
 | `toggleTheme()` | Flips `isDark`, calls `applyTheme`, persists to `localStorage` as `squad_theme` |
@@ -140,6 +149,8 @@ The app uses a simple custom auth layer â€” **no Supabase Auth**. Credentia
 | `updateColumn / addStatus / deleteStatus` | Manage `task_statuses` rows |
 | `reorderColumn(status, direction)` | Reorder kanban columns: swaps positions and renumbers all `sort_order` values sequentially (0, 1, 2...); direction is 'up' or 'down'; shows success toast on completion |
 | `onDrop(status)` | Kanban drag-and-drop; guarded â€” non-admin non-assignee blocked; logs activity; notifies admins if actor is user role |
+| `sendWorkspaceMessage(content)` | Sends a workspace chat message with validation (`trim`, max 2000 chars), appends locally, logs activity |
+| `markChatRead()` | Updates `workspace_chat_reads.last_read_at` when user is on Chat tab |
 | `markAllNotificationsRead()` | Marks all unread notifications as read in DB and local ref |
 | `acceptAssignment(notif)` | Sets `task.confirmed = true`; deletes request notification; sends `task_confirmed` to sender |
 | `declineAssignment(notif)` | Deletes the task and notification; sends `task_declined` to sender |
@@ -172,8 +183,9 @@ The app uses a simple custom auth layer â€” **no Supabase Auth**. Credentia
 
 ### AppHeader
 
-- Accepts `clock`, `currentUser`, `unreadCount` props; emits `open-modal`, `open-settings`, `open-notifications`, `logout`.
+- Accepts `clock`, `currentUser`, `unreadCount`, `chatUnreadCount` props; emits `open-modal`, `open-settings`, `open-chat`, `open-notifications`, `logout`.
 - Notification bell shows a red badge when `unreadCount > 0`; clicking emits `open-notifications` which toggles `showNotifications` in App.vue.
+- Chat button shows a blue badge when `chatUnreadCount > 0`; clicking emits `open-chat` which switches `currentTab` to `chat`.
 - Logout button emits `logout`.
 
 ### TaskDetailModal
@@ -224,7 +236,16 @@ The app uses a simple custom auth layer â€” **no Supabase Auth**. Credentia
 ### TabBar
 
 - Accepts `currentUser` prop.
+- Includes a **Chat tab** with unread badge from `chatUnreadCount`.
 - **Activity Log tab** rendered only when `currentUser.access === 'admin'`.
+- Member/priority filters are hidden when `currentTab === 'chat'`.
+
+### ChatView
+
+- Workspace-scoped group chat view rendered when `currentTab === 'chat'`.
+- Accepts `messages` and `members` props.
+- Emits `send-message` and `mark-read`.
+- Composer trims input, supports Enter-to-send, and enforces max length 2000 characters.
 
 ### SettingsSidebar
 
@@ -240,6 +261,7 @@ The app uses a simple custom auth layer â€” **no Supabase Auth**. Credentia
 - Accepts `currentUser` prop (in addition to existing props).
 - `canDrag(task)` helper â€” returns `true` when `currentUser.access === 'admin'` or `task.assigneeId === currentUser.id`.
 - Passes `:can-drag="canDrag(task)"` to each `TaskCard`.
+- Includes a fixed **Back to Top** button that appears after vertical scrolling and smoothly scrolls `window` to top.
 
 ### TaskCard / ListView
 
@@ -260,6 +282,7 @@ The app uses a simple custom auth layer â€” **no Supabase Auth**. Credentia
 
 - **Auth gate** â€” `LoginView` shown via `v-if="!currentUser"`. Full app in `<template v-else>`. No data fetched until login succeeds.
 - **Session persistence** â€” `currentUser` saved to `localStorage` on login; restored in `onMounted` to survive page reloads.
+- **Workspace persistence** â€” `currentWorkspaceId` is restored from `localStorage` (`squad_workspace`) on reload, and `sessionWorkspaceChosen` is restored to avoid re-opening `WorkspaceGateView` after refresh.
 - **Theme persistence** â€” `isDark` initialised from `localStorage` key `squad_theme`. Applied to `<html data-theme>` immediately in `onMounted` before first render.
 - **Task confirmation** â€” tasks with `confirmed = false` are created by non-admin users assigning to others. They show a PENDING badge everywhere and block action buttons in the detail modal. Assignee accepts/declines via `NotificationPanel`.
 - **Permission enforcement** â€” all mutating actions (`editTask`, `onDrop`, `toggleDone`) guard at the action level in `App.vue` in addition to UI-level gating. Non-owner non-admin calls return early with an error toast.
@@ -267,7 +290,10 @@ The app uses a simple custom auth layer â€” **no Supabase Auth**. Credentia
 - **Admin activity notifications** â€” `notifyAdmins()` sends notifications to all admins when a user role: comments on a task (`task_commented`), assigns a task to someone (`task_assigned`), or moves a task to a new status (`task_status_changed`).
 - **Edit restriction** â€” Edit, Delete, and Mark Done buttons in `TaskDetailModal` only render when `currentUser.access === 'admin' || task.assigneeId === currentUser.id`.
 - **Activity logging** â€” `logActivity()` is called after every significant action. Logs are never deleted (no cap). The Activity Log view paginates them.
-- **Realtime sync** â€” after `fetchAll()` on login, `startRealtimeSync()` opens two Supabase Realtime WebSocket channels. `db-tasks` receives all task INSERT/UPDATE/DELETE events and patches the local array in-place. `db-notifications` is filtered server-side to `member_id = currentUser.id` and prepends new notifications instantly. No polling for tasks or notifications. Requires `tasks` and `notifications` tables to be in the `supabase_realtime` publication (`ALTER PUBLICATION supabase_realtime ADD TABLE tasks, notifications`).
+- **Chat** â€” workspace group chat is realtime via `workspace_messages`; unread count is computed from `workspace_chat_reads.last_read_at` and excludes self-sent messages.
+- **Chat hydration fallback** â€” entering Chat tab triggers a fresh message + read-state fetch so members can always see history even if realtime misses prior inserts.
+- **Realtime sync** â€” after workspace selection, `startRealtimeSync()` opens three Realtime channels: tasks, notifications, and workspace chat messages. Requires `tasks`, `notifications`, and `workspace_messages` to be in `supabase_realtime`.
+- **Reload hydration** â€” when a saved workspace exists, startup now fetches full workspace data and starts realtime immediately (without requiring a manual workspace switch).
 - **Reminder interval** â€” still runs every 15 s but now only checks for due reminders; no longer fetches tasks or notifications.
 - **Tab views** use `v-if` â€” no entry animations on per-item elements (causes flicker on tab switch).
 - **Drag-and-drop** â€” native HTML5 events. `dragTaskId` tracks in-flight card; `dragOver` drives highlight. Cards are non-draggable (`:draggable="false"`) for tasks the current user does not own. Status change logged after drop.
@@ -279,19 +305,30 @@ The app uses a simple custom auth layer â€” **no Supabase Auth**. Credentia
 
 ```
 user action (component event)
-  â†’ App.vue handler mutates tasks / reminders / members / columns / notifications refs
-  â†’ computed filteredTasks / unreadCount update automatically
-  â†’ props re-render BoardView / ListView / StatsBar / SettingsSidebar / AppHeader
+  â†’ App.vue handler mutates tasks / reminders / members / columns / notifications / chatMessages refs
+  â†’ computed filteredTasks / unreadCount / chatUnreadCount update automatically
+  â†’ props re-render BoardView / ListView / ChatView / StatsBar / SettingsSidebar / AppHeader
 ```
 
 State is persisted in **Supabase Postgres**. See [SUPABASE.md](./SUPABASE.md) for full database documentation.
 
 
-### Latest updates (v3.11.0)
+### Latest updates (v3.12.2)
 
-- Post-login is now workspace-first: users must create/select a workspace from `WorkspaceGateView` before app shell renders.
-- Done state is configurable by admins via `task_statuses.is_done` (not tied to last column order).
-- Workspace owners (non-admin) can manage workspace members in Settings.
-- Admins can move tasks across workspaces from task edit; linked reminders move with the task.
-- Cross-workspace moves are logged in both source and target workspace activity logs (`task_moved_workspace`).
+- Added BoardView fixed **Back to Top** button for long board pages.
+- Button appears after scroll threshold and uses smooth scroll-to-top behavior.
+
+### Previous updates (v3.12.1)
+
+- Fixed startup hydration issue where reload could show empty data until manually switching workspace.
+- Fixed chat visibility for workspace members by refreshing chat data on Chat tab entry.
+- Adjusted chat history fetch to guarantee latest 100 messages are loaded and rendered in chronological order.
+
+### Previous updates (v3.12.0)
+
+- Added workspace member group chat with a new Chat tab (`ChatView.vue`).
+- Added `workspace_messages` and `workspace_chat_reads` tables with migration `007_workspace_chat.sql`.
+- Added realtime channel `db-workspace-messages` filtered by active workspace.
+- Added chat unread badges in `AppHeader` and `TabBar`.
+- Added workspace restore on reload so workspace gate is login-first, not refresh-first.
 
