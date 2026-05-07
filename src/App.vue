@@ -105,6 +105,7 @@
       :task="detailTask"
       :members="members"
       :columns="columns"
+      :workspaces="workspaces"
       :current-user="currentUser"
       :workspace-id="currentWorkspaceId"
       @close="modals.detail = false"
@@ -723,7 +724,7 @@ async function addTask() {
   Object.assign(form, { title: '', desc: '', assigneeId: '', priority: 'medium', due: '', status: columns.value[0]?.status ?? '', reminderDt: '' })
 }
 
-async function editTask({ id, title, desc, priority, due, status }) {
+async function editTask({ id, title, desc, priority, due, status, workspaceId }) {
   if (!canAccessCurrentWorkspace()) return
   const t = tasks.value.find(t => t.id === id)
   if (!t) return
@@ -731,20 +732,44 @@ async function editTask({ id, title, desc, priority, due, status }) {
     showToast('Permission Denied', 'You can only edit tasks assigned to you', 'red')
     return
   }
-  Object.assign(t, { title, desc, priority, due, status })
+
+  const targetWorkspaceId = currentUser.value.access === 'admin'
+    ? (workspaceId || t.workspaceId || currentWorkspaceId.value)
+    : t.workspaceId
+
+  const movedWorkspace = targetWorkspaceId !== t.workspaceId
+  Object.assign(t, { title, desc, priority, due, status, workspaceId: targetWorkspaceId })
   if (detailTask.value?.id === id) detailTask.value = { ...t }
+
   const { error } = await supabase.from('tasks').update({
     title,
     description: desc,
     priority,
     due:    due || null,
     status,
+    workspace_id: targetWorkspaceId,
   }).eq('id', id)
-  if (error) showToast('Error', 'Could not update task', 'red')
-  else {
-    showToast('Task Updated', title, 'yellow')
-    logActivity('task_updated', 'task', id, `${currentUser.value.name} updated task: "${title}"`)
+  if (error) {
+    showToast('Error', 'Could not update task', 'red')
+    return
   }
+
+  if (movedWorkspace) {
+    await supabase
+      .from('reminders')
+      .update({ workspace_id: targetWorkspaceId })
+      .eq('task_id', id)
+
+    reminders.value = reminders.value.filter(r => r.taskId !== id)
+    tasks.value = tasks.value.filter(task => task.id !== id)
+    if (detailTask.value?.id === id) detailTask.value = null
+    modals.detail = false
+    showToast('Task Moved', `Moved "${title}" to another workspace`, 'yellow')
+    return
+  }
+
+  showToast('Task Updated', title, 'yellow')
+  logActivity('task_updated', 'task', id, `${currentUser.value.name} updated task: "${title}"`)
 }
 
 async function onCommentAdded({ taskId, taskTitle }) {

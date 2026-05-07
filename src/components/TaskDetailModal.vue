@@ -159,6 +159,12 @@
               <option v-for="col in columns" :key="col.status" :value="col.status">{{ col.label }}</option>
             </select>
           </div>
+          <div v-if="currentUser?.access === 'admin'">
+            <label class="text-xs font-mono mb-1.5 block" style="color:var(--muted)">WORKSPACE</label>
+            <select class="field text-sm" v-model="editForm.workspaceId">
+              <option v-for="w in workspaces" :key="w.id" :value="w.id">{{ w.name }}</option>
+            </select>
+          </div>
           <div class="flex gap-2 pt-2">
             <button class="btn-primary text-sm flex-1" @click="saveEdit">Save Changes</button>
             <button class="btn-ghost text-sm" @click="editMode = false">Cancel</button>
@@ -180,6 +186,7 @@ const props = defineProps({
   task:        Object,
   members:     Array,
   columns:     Array,
+  workspaces:  Array,
   currentUser: Object,
   workspaceId: String,
 })
@@ -197,7 +204,7 @@ const canDelete = computed(() =>
 
 // ── view state ────────────────────────────────────────────────────────────────
 const editMode = ref(false)
-const editForm = reactive({ title: '', desc: '', priority: 'medium', due: '', status: '' })
+const editForm = reactive({ title: '', desc: '', priority: 'medium', due: '', status: '', workspaceId: '' })
 
 const assignee    = computed(() => props.members.find(m => m.id === props.task?.assigneeId))
 const overdue     = computed(() => props.task ? isOverdue(props.task) : false)
@@ -215,6 +222,7 @@ function startEdit() {
     priority: props.task.priority,
     due:      props.task.due ?? '',
     status:   props.task.status,
+    workspaceId: props.task.workspaceId ?? props.workspaceId ?? '',
   })
   editMode.value = true
 }
