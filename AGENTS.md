@@ -118,6 +118,7 @@ The app uses a simple custom auth layer — **no Supabase Auth**. Credentials ar
 | `taskLoadingQuote` | `string` ref | Current motivational quote shown under assignment Lottie |
 | `taskDoneSubmitting` | `boolean` ref | Controls done-state loading overlay during mark-done / drag-to-done actions |
 | `doneLoadingQuote` | `string` ref | Current motivational quote shown under done-loading Lottie |
+| `reminderTriggeredCard` | `{ id, title, workspaceId, workspaceName } \| null` ref | Controls reminder-trigger popup card content/visibility |
 | `isDark` | `boolean` ref | `true` = dark mode (default); persisted in `localStorage` as `squad_theme` |
 | `modals` | reactive object | `add / reminder / detail / member` boolean flags |
 | `form / remForm / memberForm` | reactive objects | Controlled inputs for each modal |
@@ -321,10 +322,12 @@ The app uses a simple custom auth layer — **no Supabase Auth**. Credentials ar
 - **Task assignment loading** — task creation now enforces a minimum 7-second loading state with Lottie animation before modal closes.
 - **Motivational quote loading text** — assignment loading overlay shows only a motivational quote (no "Assigning task..." text), randomized from Supabase quotes when available.
 - **Done transition loading** — marking a task done (checkbox/button) or dragging a task into the done column shows a 7-second Lottie + motivational quote loading UI before write completion. Reopen actions are immediate.
-- **Reminder interval** — still runs every 15 s but now only checks for due reminders; no longer fetches tasks or notifications.
+- **Reminder interval** — runs every 15 s and queries due, unfired reminders for the current user scope (`team` + `currentUser.id`) across workspaces. Triggered reminders are marked fired in DB and shown in a centered reminder popup card (with close `X`) that includes the workspace name.
+- **Reminder time save format** — reminder values from `datetime-local` inputs are converted to ISO timestamps before insert to prevent timezone offsets on display/trigger.
 - **Tab views** use `v-if` — no entry animations on per-item elements (causes flicker on tab switch).
 - **Drag-and-drop** — native HTML5 events. `dragTaskId` tracks in-flight card; `dragOver` drives highlight. Cards are non-draggable (`:draggable="false"`) for tasks the current user does not own. Status change logged after drop.
 - **Optimistic updates** — all actions mutate local refs immediately, then write to Supabase. Errors surface as red toasts.
+- **Task fetch ordering** — workspace task hydration/fetch uses newest-first ordering (`created_at DESC`, then `id DESC`) so newly created tasks stay at the top after reloads/sync.
 - **Dynamic statuses** — no DB check constraint on `tasks.status`. Valid keys are whatever rows exist in `task_statuses`.
 - **Self-update sync** — `updateMember` patches `currentUser` when the updated member is the logged-in user.
 
@@ -339,7 +342,15 @@ user action (component event)
 
 State is persisted in **Supabase Postgres**. See [SUPABASE.md](./SUPABASE.md) for full database documentation.
 
-### Latest updates (v3.12.8)
+### Latest updates (v3.12.9)
+
+- Added centered reminder-trigger popup card with reminder-specific Lottie and manual close (`X`).
+- Added workspace label on reminder popup so assignees can identify which workspace the reminder belongs to.
+- Fixed reminder timezone shift by converting `datetime-local` values to ISO before DB insert.
+- Fixed cross-workspace reminder triggering by querying due reminders for the current user scope (`team` + own user id), not only active-workspace reminders.
+- Fixed task ordering drift by fetching workspace tasks in newest-first order (`created_at DESC`, `id DESC`).
+
+### Previous updates (v3.12.8)
 
 - Fixed notification realtime filter for per-user subscription (`member_id` only), resolving missed notification inserts that previously required reload to update the bell badge.
 - Updated notification fetch and local cache sizing to global user scope (all workspaces, latest 200).

@@ -54,6 +54,40 @@
         </p>
       </div>
     </div>
+    <div
+      v-if="reminderTriggeredCard"
+      class="fixed inset-0 z-[320] flex items-center justify-center"
+      style="background:rgba(5,5,5,0.72)"
+    >
+      <div
+        class="relative w-[min(92vw,360px)] rounded-2xl px-5 py-5 flex flex-col items-center gap-2"
+        style="background:var(--surface2);border:1px solid var(--border);box-shadow:0 16px 42px rgba(0,0,0,0.38)"
+      >
+        <button
+          type="button"
+          class="absolute top-2 right-2 w-8 h-8 grid place-items-center rounded-full"
+          style="color:var(--muted);border:1px solid var(--border);background:var(--surface)"
+          @click="closeReminderCard"
+        >
+          <span class="material-icons text-[18px]">close</span>
+        </button>
+        <iframe
+          src="https://lottie.host/embed/312044f8-5bf3-4ca7-8f2e-80802c18be67/0w7ufaAx8H.lottie"
+          title="Reminder Triggered Animation"
+          style="width:180px;height:180px;border:0;background:transparent"
+          allowfullscreen
+        ></iframe>
+        <p class="text-sm text-center px-2 max-w-[290px] font-medium" style="color:var(--accent)">
+          Reminder
+        </p>
+        <p class="text-sm text-center px-2 max-w-[290px]" style="color:var(--text)">
+          {{ reminderTriggeredCard.title }}
+        </p>
+        <p class="text-xs text-center px-2 max-w-[290px] font-mono" style="color:var(--muted)">
+          Workspace: {{ reminderTriggeredCard.workspaceName }}
+        </p>
+      </div>
+    </div>
     <StatsBar :tasks="tasks" :members="members" @open-modal="openModal" />
     <TabBar
       v-model:currentTab="currentTab"
@@ -260,6 +294,7 @@ function logout() {
   sessionWorkspaceChosen.value = false
   tasks.value         = []
   reminders.value     = []
+  reminderTriggeredCard.value = null
   chatMessages.value  = []
   chatLastReadAt.value = null
   columns.value       = []
@@ -280,6 +315,7 @@ const taskSubmitting    = ref(false)
 const taskLoadingQuote  = ref('Progress is built one small step at a time.')
 const taskDoneSubmitting = ref(false)
 const doneLoadingQuote  = ref('Progress is built one small step at a time.')
+const reminderTriggeredCard = ref(null)
 const showSettings      = ref(false)
 const showNotifications = ref(false)
 const isDark            = ref(localStorage.getItem('squad_theme') !== 'light')
@@ -312,6 +348,7 @@ const fallbackQuotes = [
 const lottieUrls = [
   'https://lottie.host/embed/01a8e34a-800c-479e-9ad8-aaa8e0a4156c/WxIgIY3KeE.lottie',
   'https://lottie.host/embed/fa739806-f75d-48ec-818f-a32db3896a8b/rXx8MECluZ.lottie',
+  'https://lottie.host/embed/312044f8-5bf3-4ca7-8f2e-80802c18be67/0w7ufaAx8H.lottie',
 ]
 const startupCdnUrls = [
   ...lottieUrls,
@@ -420,6 +457,13 @@ function moveTaskToTop(taskId) {
   tasks.value.unshift(task)
 }
 
+function localDateTimeToIso(value) {
+  if (!value) return null
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return null
+  return parsed.toISOString()
+}
+
 // ── computed ──────────────────────────────────────────────────────────────────
 const filteredTasks = computed(() => tasks.value.filter(t =>
   (!filterMember.value   || t.assigneeId === filterMember.value) &&
@@ -473,7 +517,12 @@ async function fetchAll() {
 
 async function fetchTasks() {
   if (!currentWorkspaceId.value) return
-  const { data } = await supabase.from('tasks').select('*').eq('workspace_id', currentWorkspaceId.value).order('created_at')
+  const { data } = await supabase
+    .from('tasks')
+    .select('*')
+    .eq('workspace_id', currentWorkspaceId.value)
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
   if (data) tasks.value = data.map(mapTask)
 }
 
@@ -499,7 +548,12 @@ async function fetchWorkspaceData(workspaceId) {
   chatMessages.value = []
   chatLastReadAt.value = null
   const [tRes, rRes, wmRes] = await Promise.all([
-    supabase.from('tasks').select('*').eq('workspace_id', workspaceId).order('created_at'),
+    supabase
+      .from('tasks')
+      .select('*')
+      .eq('workspace_id', workspaceId)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false }),
     supabase.from('reminders').select('*').eq('workspace_id', workspaceId).order('created_at'),
     supabase.from('workspace_members').select('*').eq('workspace_id', workspaceId),
   ])
@@ -785,13 +839,32 @@ async function startApp() {
   }
 
   reminderInterval = setInterval(async () => {
-    const now = new Date()
-    for (const r of reminders.value) {
-      if (!r.fired && new Date(r.datetime) <= now) {
-        r.fired = true
-        showToast('Reminder', r.title, 'yellow', 8000)
-        await supabase.from('reminders').update({ fired: true }).eq('id', r.id)
+    if (!currentUser.value) return
+    const nowIso = new Date().toISOString()
+    const assigneeIds = ['team', currentUser.value.id]
+    const { data, error } = await supabase
+      .from('reminders')
+      .select('*')
+      .eq('fired', false)
+      .lte('datetime', nowIso)
+      .in('assignee_id', assigneeIds)
+      .order('datetime', { ascending: true })
+      .limit(20)
+
+    if (error || !data?.length) return
+
+    for (const row of data) {
+      const mapped = mapReminder(row)
+      const localReminder = reminders.value.find(r => r.id === mapped.id)
+      if (localReminder) localReminder.fired = true
+      const workspaceName = workspaces.value.find(w => w.id === mapped.workspaceId)?.name ?? 'Unknown Workspace'
+      reminderTriggeredCard.value = {
+        id: mapped.id,
+        title: mapped.title,
+        workspaceId: mapped.workspaceId,
+        workspaceName,
       }
+      await supabase.from('reminders').update({ fired: true }).eq('id', mapped.id)
     }
   }, 15000)
 }
@@ -812,6 +885,10 @@ function toggleTheme() {
   isDark.value = !isDark.value
   applyTheme(isDark.value)
   localStorage.setItem('squad_theme', isDark.value ? 'dark' : 'light')
+}
+
+function closeReminderCard() {
+  reminderTriggeredCard.value = null
 }
 
 onMounted(() => {
@@ -967,11 +1044,17 @@ async function addTask() {
   tasks.value.unshift(task)
 
   if (form.reminderDt) {
+    const reminderIso = localDateTimeToIso(form.reminderDt)
+    if (!reminderIso) {
+      await minimumDelay
+      showToast('Error', 'Invalid reminder date/time', 'red')
+      return
+    }
     const { data: rData, error: rErr } = await supabase.from('reminders').insert({
       workspace_id: currentWorkspaceId.value,
       title:       `Task: ${task.title}`,
       task_id:     task.id,
-      datetime:    form.reminderDt,
+      datetime:    reminderIso,
       assignee_id: form.assigneeId,
       fired:       false,
     }).select().single()
@@ -1179,12 +1262,17 @@ async function deleteTask(id) {
 async function addReminder() {
   if (!canAccessCurrentWorkspace()) return
   if (!remForm.title.trim() || !remForm.datetime) return
+  const reminderIso = localDateTimeToIso(remForm.datetime)
+  if (!reminderIso) {
+    showToast('Error', 'Invalid reminder date/time', 'red')
+    return
+  }
 
   const { data, error } = await supabase.from('reminders').insert({
     workspace_id: currentWorkspaceId.value,
     title:       remForm.title.trim(),
     task_id:     remForm.taskId || null,
-    datetime:    remForm.datetime,
+    datetime:    reminderIso,
     assignee_id: remForm.assigneeId,
     fired:       false,
   }).select().single()

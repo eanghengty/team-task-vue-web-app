@@ -2,6 +2,19 @@
 
 All notable changes to SQUAD — Team Task Board.
 
+## [3.12.9] - 2026-05-07
+
+### Added
+- **Reminder trigger popup card** (small centered modal) with reminder-specific Lottie animation and manual close (`X`) button.
+- Reminder popup now includes the **source workspace name** so assignees can identify context when alerts arrive while viewing another workspace.
+
+### Fixed
+- **Reminder timezone drift** when creating reminders from `datetime-local` inputs. Reminder times are now converted to ISO before insert so local selections are preserved correctly.
+- **Cross-workspace reminder visibility** for assignees. Reminder trigger checks now query due reminders for the current user (`team` + user id) across all workspaces, instead of only the active workspace list.
+- **Task list ordering consistency** after hydration/sync. Task fetches now use newest-first ordering so newly created tasks stay at the top.
+
+---
+
 ## [3.12.8] - 2026-05-07
 
 ### Fixed
