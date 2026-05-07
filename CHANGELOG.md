@@ -2,6 +2,31 @@
 
 All notable changes to SQUAD — Team Task Board.
 
+## [3.12.6] - 2026-05-07
+
+### Added
+- **Motivational quote loading** beneath task-assignment Lottie in `AddTaskModal`.
+- New migration: `009_motivational_quotes.sql` with `motivational_quotes` table and 10 seeded fixed quotes.
+
+### Changed
+- Task assignment loading overlay now shows **quote-only text** (removed static "Assigning task..." line).
+- Quote source now prefers Supabase (`motivational_quotes`) with in-app fallback pool if unavailable.
+
+---
+
+## [3.12.5] - 2026-05-07
+
+### Added
+- **Workspace chat/reply notifications for members** (`chat_message`), fanned out to all workspace members except sender.
+- **Top-right popup for incoming chat/reply** showing `<username> - New message` (no message body), auto-dismiss after 5 seconds.
+- **Task assignment loading overlay** in `AddTaskModal` using provided Lottie embed.
+
+### Changed
+- Task create/assign flow now enforces a **minimum 7-second loading state** before modal closes.
+- Removed duplicate header chat icon entry point; chat access remains via Chat tab with unread badge.
+
+---
+
 ## [3.12.4] - 2026-05-07
 
 ### Added

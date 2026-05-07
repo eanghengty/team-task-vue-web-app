@@ -65,7 +65,8 @@ supabase/
     ├── 005_workspace_ownership.sql                — adds workspaces + workspace_members and scopes core tables
     ├── 006_done_status_config.sql                 — adds task_statuses.is_done for configurable done state
     ├── 007_workspace_chat.sql                     — adds workspace_messages + workspace_chat_reads and chat realtime publication
-    └── 008_workspace_chat_replies.sql             — adds `workspace_messages.reply_to_message_id` for chat reply threading
+    ├── 008_workspace_chat_replies.sql             — adds `workspace_messages.reply_to_message_id` for chat reply threading
+    └── 009_motivational_quotes.sql                — adds `motivational_quotes` table and seeds 10 fixed quotes
 ```
 
 ### Auth flow
@@ -113,6 +114,8 @@ The app uses a simple custom auth layer — **no Supabase Auth**. Credentials ar
 | `unreadCount` | computed `number` | Count of `notifications` where `read === false`; drives bell badge |
 | `chatUnreadCount` | computed `number` | Count of unseen chat messages in current workspace excluding own messages |
 | `showNotifications` | `boolean` ref | Controls `NotificationPanel` open/close |
+| `taskSubmitting` | `boolean` ref | Controls AddTaskModal loading/disabled state during task assignment |
+| `taskLoadingQuote` | `string` ref | Current motivational quote shown under assignment Lottie |
 | `isDark` | `boolean` ref | `true` = dark mode (default); persisted in `localStorage` as `squad_theme` |
 | `modals` | reactive object | `add / reminder / detail / member` boolean flags |
 | `form / remForm / memberForm` | reactive objects | Controlled inputs for each modal |
@@ -130,6 +133,8 @@ The app uses a simple custom auth layer — **no Supabase Auth**. Credentials ar
 | `fetchNotifications()` | Fetches last 50 notifications for `currentUser`; called once in `fetchAll` only |
 | `fetchWorkspaceMessages(workspaceId)` | Fetches latest 100 workspace chat messages (DESC in DB), then reverses client-side for oldest ? newest rendering |
 | `fetchChatReadState(workspaceId, memberId)` | Fetches chat read cursor (`last_read_at`) for unread count calculation |
+| `fetchMotivationQuotes()` | Fetches motivational quotes from `motivational_quotes` table |
+| `setRandomTaskLoadingQuote()` | Picks a random quote (Supabase first, fallback pool if unavailable) |
 | `fetchTasks()` | Fetches all tasks; available for manual refresh if needed |
 | `startRealtimeSync()` | Opens three Supabase Realtime WebSocket channels: `db-tasks`, `db-notifications`, and `db-workspace-messages` (workspace-scoped). Patches local arrays in-place |
 | `stopRealtimeSync()` | Removes all active Realtime channels |
@@ -150,7 +155,10 @@ The app uses a simple custom auth layer — **no Supabase Auth**. Credentials ar
 | `updateColumn / addStatus / deleteStatus` | Manage `task_statuses` rows |
 | `reorderColumn(status, direction)` | Reorder kanban columns: swaps positions and renumbers all `sort_order` values sequentially (0, 1, 2...); direction is 'up' or 'down'; shows success toast on completion |
 | `onDrop(status)` | Kanban drag-and-drop; guarded — non-admin non-assignee blocked; logs activity; notifies admins if actor is user role |
-| `sendWorkspaceMessage(content)` | Sends a workspace chat message with validation (`trim`, max 2000 chars), appends locally, logs activity |
+| `sendWorkspaceMessage(payload)` | Sends a workspace chat/reply message with validation (`trim`, max 2000 chars), appends locally, fans out workspace notifications, logs activity |
+| `notifyWorkspaceMembers(type, message, workspaceId, senderId)` | Sends notifications to all members in the workspace except the sender |
+| `deleteWorkspaceMessage(messageId)` | Admin-only chat moderation: delete one message with rollback on failure |
+| `deleteAllWorkspaceMessages()` | Admin-only chat moderation: delete all workspace messages for current workspace with rollback on failure |
 | `markChatRead()` | Updates `workspace_chat_reads.last_read_at` when user is on Chat tab |
 | `markAllNotificationsRead()` | Marks all unread notifications as read in DB and local ref |
 | `acceptAssignment(notif)` | Sets `task.confirmed = true`; deletes request notification; sends `task_confirmed` to sender |
@@ -184,9 +192,8 @@ The app uses a simple custom auth layer — **no Supabase Auth**. Credentials ar
 
 ### AppHeader
 
-- Accepts `clock`, `currentUser`, `unreadCount`, `chatUnreadCount` props; emits `open-modal`, `open-settings`, `open-chat`, `open-notifications`, `logout`.
+- Accepts `clock`, `currentUser`, `unreadCount` props; emits `open-modal`, `open-settings`, `open-notifications`, `logout`.
 - Notification bell shows a red badge when `unreadCount > 0`; clicking emits `open-notifications` which toggles `showNotifications` in App.vue.
-- Chat button shows a blue badge when `chatUnreadCount > 0`; clicking emits `open-chat` which switches `currentTab` to `chat`.
 - Logout button emits `logout`.
 
 ### TaskDetailModal
@@ -231,8 +238,9 @@ The app uses a simple custom auth layer — **no Supabase Auth**. Credentials ar
 
 ### AddTaskModal
 
-- Accepts `currentUser` prop.
+- Accepts `currentUser`, `submitting`, and `loadingQuote` props.
 - When `currentUser.access === 'user'` and `form.assigneeId !== currentUser.id`, shows an inline notice: "The assignee will receive a notification to confirm this task."
+- During submit, shows a full modal loading overlay with Lottie animation and a motivational quote, and disables close/inputs/buttons.
 
 ### TabBar
 
@@ -301,8 +309,11 @@ The app uses a simple custom auth layer — **no Supabase Auth**. Credentials ar
 - **Activity logging** — `logActivity()` is called after every significant action. Logs are never deleted (no cap). The Activity Log view paginates them.
 - **Chat** — workspace group chat is realtime via `workspace_messages`; unread count is computed from `workspace_chat_reads.last_read_at` and excludes self-sent messages.
 - **Chat hydration fallback** — entering Chat tab triggers a fresh message + read-state fetch so members can always see history even if realtime misses prior inserts.
+- **Chat notifications** — each new chat/reply sends a `chat_message` notification to all other workspace members; recipients see a top-right popup for 5s with `<username> - New message` (no message content).
 - **Realtime sync** — after workspace selection, `startRealtimeSync()` opens three Realtime channels: tasks, notifications, and workspace chat messages. Requires `tasks`, `notifications`, and `workspace_messages` to be in `supabase_realtime`.
 - **Reload hydration** — when a saved workspace exists, startup now fetches full workspace data and starts realtime immediately (without requiring a manual workspace switch).
+- **Task assignment loading** — task creation now enforces a minimum 7-second loading state with Lottie animation before modal closes.
+- **Motivational quote loading text** — assignment loading overlay shows only a motivational quote (no "Assigning task..." text), randomized from Supabase quotes when available.
 - **Reminder interval** — still runs every 15 s but now only checks for due reminders; no longer fetches tasks or notifications.
 - **Tab views** use `v-if` — no entry animations on per-item elements (causes flicker on tab switch).
 - **Drag-and-drop** — native HTML5 events. `dragTaskId` tracks in-flight card; `dragOver` drives highlight. Cards are non-draggable (`:draggable="false"`) for tasks the current user does not own. Status change logged after drop.
@@ -322,7 +333,20 @@ user action (component event)
 State is persisted in **Supabase Postgres**. See [SUPABASE.md](./SUPABASE.md) for full database documentation.
 
 
-### Latest updates (v3.12.4)
+### Latest updates (v3.12.6)
+
+- Added `motivational_quotes` support with migration `009_motivational_quotes.sql` (10 fixed seeded quotes).
+- AddTaskModal loading overlay now displays a random motivational quote under Lottie during task assignment.
+- Assignment overlay text was simplified to quote-only (removed static "Assigning task..." line).
+
+### Previous updates (v3.12.5)
+
+- Added workspace-wide chat/reply notifications (`chat_message`) with sender excluded.
+- Added top-right 5-second popup for incoming chat/reply events showing `<username> - New message`.
+- Removed duplicate header chat icon entry point; chat now uses tab-only navigation/badge.
+- Added AddTaskModal submit loading overlay with Lottie embed and minimum 7-second assignment loading state.
+
+### Previous updates (v3.12.4)
 
 - Added admin-only chat moderation actions in `ChatView`: delete one message and delete all workspace messages.
 - Added `App.vue` handlers `deleteWorkspaceMessage` and `deleteAllWorkspaceMessages` with admin permission guards, optimistic rollback, and activity logs.

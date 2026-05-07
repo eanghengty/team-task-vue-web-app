@@ -99,6 +99,8 @@
       :columns="columns"
       :shaking="shaking"
       :current-user="currentUser"
+      :submitting="taskSubmitting"
+      :loading-quote="taskLoadingQuote"
       @close="modals.add = false"
       @submit="addTask"
     />
@@ -254,6 +256,8 @@ const dragTaskId        = ref(null)
 const dragOver          = ref(null)
 const detailTask        = ref(null)
 const loading           = ref(true)
+const taskSubmitting    = ref(false)
+const taskLoadingQuote  = ref('Progress is built one small step at a time.')
 const showSettings      = ref(false)
 const showNotifications = ref(false)
 const isDark            = ref(localStorage.getItem('squad_theme') !== 'light')
@@ -270,6 +274,19 @@ const chatMessages  = ref([])
 const chatLastReadAt = ref(null)
 const notifications = ref([])
 const toasts        = ref([])
+const motivationQuotes = ref([])
+const fallbackQuotes = [
+  'Small steps every day build big results.',
+  'Progress over perfection, always.',
+  'Done is better than waiting for perfect.',
+  'Momentum starts with one focused action.',
+  'Consistency beats intensity in the long run.',
+  'Clear goals turn effort into impact.',
+  'Discipline today creates freedom tomorrow.',
+  'Teamwork turns hard work into shared wins.',
+  'Keep moving - every task completed matters.',
+  'Great outcomes come from steady execution.',
+]
 
 const modals     = reactive({ add: false, reminder: false, detail: false, member: false, workspace: false })
 const form       = reactive({ title: '', desc: '', assigneeId: '', priority: 'medium', due: '', status: 'todo', reminderDt: '' })
@@ -492,6 +509,26 @@ async function fetchChatReadState(workspaceId, memberId) {
     .eq('member_id', memberId)
     .maybeSingle()
   chatLastReadAt.value = data?.last_read_at ?? null
+}
+
+async function fetchMotivationQuotes() {
+  const { data, error } = await supabase
+    .from('motivational_quotes')
+    .select('quote')
+    .order('created_at', { ascending: true })
+  if (error) {
+    console.warn('[motivational_quotes]', error.message)
+    motivationQuotes.value = []
+    return
+  }
+  motivationQuotes.value = (data ?? []).map(row => row.quote).filter(Boolean)
+}
+
+async function setRandomTaskLoadingQuote() {
+  if (!motivationQuotes.value.length) await fetchMotivationQuotes()
+  const pool = motivationQuotes.value.length ? motivationQuotes.value : fallbackQuotes
+  const idx = Math.floor(Math.random() * pool.length)
+  taskLoadingQuote.value = pool[idx]
 }
 
 async function notifyAdmins(type, message, taskId) {
@@ -797,10 +834,16 @@ async function logActivity(action, entityType, entityId, message) {
 }
 
 async function addTask() {
+  if (taskSubmitting.value) return
   if (!canAccessCurrentWorkspace()) return
   if (!form.title.trim())  { triggerShake('taskTitle');    return }
   if (!form.assigneeId)    { triggerShake('taskAssignee'); return }
 
+  await setRandomTaskLoadingQuote()
+  taskSubmitting.value = true
+  const minimumDelay = new Promise(resolve => setTimeout(resolve, 7000))
+
+  try {
   const isCrossAssignment = currentUser.value.access === 'user' &&
                             form.assigneeId !== currentUser.value.id
   const confirmed = !isCrossAssignment
@@ -817,7 +860,11 @@ async function addTask() {
     confirmed,
   }).select().single()
 
-  if (error) { showToast('Error', 'Could not create task', 'red'); return }
+  if (error) {
+    await minimumDelay
+    showToast('Error', 'Could not create task', 'red')
+    return
+  }
 
   const task = mapTask(data)
   tasks.value.push(task)
@@ -869,8 +916,12 @@ async function addTask() {
     )
   }
 
+  await minimumDelay
   modals.add = false
   Object.assign(form, { title: '', desc: '', assigneeId: '', priority: 'medium', due: '', status: columns.value[0]?.status ?? '', reminderDt: '' })
+  } finally {
+    taskSubmitting.value = false
+  }
 }
 
 async function editTask({ id, title, desc, priority, due, status, workspaceId }) {

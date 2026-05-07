@@ -120,6 +120,24 @@ create table workspace_chat_reads (
   unique (workspace_id, member_id)
 );
 
+create table motivational_quotes (
+  id         uuid primary key default gen_random_uuid(),
+  quote      text not null unique,
+  created_at timestamptz not null default now()
+);
+
+insert into motivational_quotes (quote) values
+  ('Small steps every day build big results.'),
+  ('Progress over perfection, always.'),
+  ('Done is better than waiting for perfect.'),
+  ('Momentum starts with one focused action.'),
+  ('Consistency beats intensity in the long run.'),
+  ('Clear goals turn effort into impact.'),
+  ('Discipline today creates freedom tomorrow.'),
+  ('Teamwork turns hard work into shared wins.'),
+  ('Keep moving - every task completed matters.'),
+  ('Great outcomes come from steady execution.');
+
 -- Enable Row Level Security (configure policies to match your auth setup)
 alter table members enable row level security;
 alter table workspaces enable row level security;
@@ -132,6 +150,7 @@ alter table activity_logs enable row level security;
 alter table notifications enable row level security;
 alter table workspace_messages enable row level security;
 alter table workspace_chat_reads enable row level security;
+alter table motivational_quotes enable row level security;
 
 -- Dev-only open policies — tighten these before going to production
 create policy "allow all members" on members for all using (true) with check (true);
@@ -145,4 +164,5 @@ create policy "allow all activity_logs" on activity_logs for all using (true) wi
 create policy "allow all notifications" on notifications for all using (true) with check (true);
 create policy "allow all workspace_messages" on workspace_messages for all using (true) with check (true);
 create policy "allow all workspace_chat_reads" on workspace_chat_reads for all using (true) with check (true);
+create policy "allow all motivational_quotes" on motivational_quotes for all using (true) with check (true);
 
