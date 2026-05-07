@@ -23,8 +23,8 @@
       </button>
     </div>
 
-    <!-- Tab nav (admin only) -->
-    <div v-if="currentUser.access === 'admin'" class="flex gap-1 px-6 py-3 flex-shrink-0" style="border-bottom:1px solid var(--border)">
+    <!-- Tab nav (admin + workspace owners) -->
+    <div v-if="showTabNav" class="flex gap-1 px-6 py-3 flex-shrink-0" style="border-bottom:1px solid var(--border)">
       <button class="tab-btn" :class="{ active: activeTab === 'members' }" @click="activeTab = 'members'">
         <span class="material-icons" style="font-size:15px;vertical-align:-3px;margin-right:5px">group</span>
         Members
@@ -55,7 +55,7 @@
       </div>
 
       <!-- ── USER: Change Password only ─────────────────────────── -->
-      <div v-if="currentUser.access === 'user'" class="p-6 flex flex-col gap-4">
+      <div v-if="showUserPasswordView" class="p-6 flex flex-col gap-4">
         <div>
           <div class="font-medium text-sm mb-0.5">Change Password</div>
           <div class="text-xs" style="color:var(--muted)">Update your login password</div>
@@ -450,6 +450,15 @@ const availableMembersToAdd = computed(() => {
   const existing = new Set(membersInSelectedWorkspace.value.map(m => m.id))
   return props.members.filter(m => !existing.has(m.id))
 })
+const hasOwnedWorkspace = computed(() =>
+  props.workspaces.some(w => w.ownerId === props.currentUser?.id)
+)
+const showTabNav = computed(() =>
+  props.currentUser?.access === 'admin' || hasOwnedWorkspace.value
+)
+const showUserPasswordView = computed(() =>
+  props.currentUser?.access === 'user' && !showTabNav.value
+)
 
 function emitAddMember() {
   if (!selectedWorkspace.value || !memberToAdd.value) return
@@ -501,6 +510,13 @@ watch(() => props.currentWorkspaceId, (id) => {
 
 watch(selectedWorkspace, (w) => {
   workspaceName.value = w?.name ?? ''
+}, { immediate: true })
+
+watch(showTabNav, (show) => {
+  if (!show) return
+  if (activeTab.value === 'members' || activeTab.value === 'statuses') {
+    if (props.currentUser?.access !== 'admin') activeTab.value = 'workspaces'
+  }
 }, { immediate: true })
 </script>
 

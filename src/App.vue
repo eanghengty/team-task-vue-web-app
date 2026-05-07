@@ -6,9 +6,20 @@
     :loading="loginLoading"
     @login="login"
   />
+  <WorkspaceGateView
+    v-else-if="workspaceGateOpen"
+    :loading="loading"
+    :workspaces="workspaces"
+    :members="members"
+    :current-user="currentUser"
+    :suggested-workspace-id="suggestedWorkspaceId"
+    @select-workspace="selectWorkspace"
+    @create-workspace="createWorkspace"
+    @logout="logout"
+  />
 
   <!-- App -->
-  <template v-else>
+  <template v-else-if="canEnterApp">
     <AppHeader
       :clock="clock"
       :current-user="currentUser"
@@ -172,6 +183,7 @@ import AddReminderModal from './components/AddReminderModal.vue'
 import TaskDetailModal  from './components/TaskDetailModal.vue'
 import AddMemberModal   from './components/AddMemberModal.vue'
 import AddWorkspaceModal from './components/AddWorkspaceModal.vue'
+import WorkspaceGateView from './components/WorkspaceGateView.vue'
 import SettingsSidebar  from './components/SettingsSidebar.vue'
 import NotificationPanel from './components/NotificationPanel.vue'
 
@@ -195,6 +207,7 @@ async function login({ email, password }) {
     return
   }
   currentUser.value = mapMember(data)
+  sessionWorkspaceChosen.value = false
   localStorage.setItem('squad_user', JSON.stringify(currentUser.value))
   startApp()
 }
@@ -209,6 +222,8 @@ function logout() {
   workspaces.value    = []
   workspaceMembers.value = []
   currentWorkspaceId.value = ''
+  suggestedWorkspaceId.value = ''
+  sessionWorkspaceChosen.value = false
   tasks.value         = []
   reminders.value     = []
   columns.value       = []
@@ -228,6 +243,8 @@ const loading           = ref(true)
 const showSettings      = ref(false)
 const showNotifications = ref(false)
 const isDark            = ref(localStorage.getItem('squad_theme') !== 'light')
+const sessionWorkspaceChosen = ref(false)
+const suggestedWorkspaceId = ref('')
 
 const members       = ref([])
 const workspaces    = ref([])
@@ -337,6 +354,12 @@ const columns = ref([])
 const doneStatusKey = computed(() =>
   columns.value.find(c => c.isDone)?.status ?? 'done'
 )
+const workspaceGateOpen = computed(() =>
+  !!currentUser.value && (!sessionWorkspaceChosen.value || !currentWorkspaceId.value)
+)
+const canEnterApp = computed(() =>
+  !!currentUser.value && sessionWorkspaceChosen.value && !!currentWorkspaceId.value
+)
 
 // ── data fetching ─────────────────────────────────────────────────────────────
 async function fetchAll() {
@@ -353,11 +376,9 @@ async function fetchAll() {
     form.status     = columns.value[0]?.status ?? 'todo'
   }
   await fetchWorkspaces()
-  if (!currentWorkspaceId.value && workspaces.value.length) {
-    currentWorkspaceId.value = workspaces.value[0].id
-  }
-  if (currentWorkspaceId.value) {
-    await fetchWorkspaceData(currentWorkspaceId.value)
+  if (!currentWorkspaceId.value && workspaces.value.length && suggestedWorkspaceId.value) {
+    const suggested = workspaces.value.find(w => w.id === suggestedWorkspaceId.value)
+    if (suggested) currentWorkspaceId.value = suggested.id
   }
   loading.value = false
 }
@@ -497,7 +518,6 @@ function startApp() {
   clock.value = new Date().toLocaleTimeString('en-US', { hour12: false })
 
   fetchAll().then(() => {
-    startRealtimeSync()
     reminderInterval = setInterval(async () => {
       const now = new Date()
       for (const r of reminders.value) {
@@ -534,9 +554,10 @@ onMounted(() => {
   clock.value = new Date().toLocaleTimeString('en-US', { hour12: false })
   const saved = localStorage.getItem('squad_user')
   const savedWorkspace = localStorage.getItem('squad_workspace')
-  if (savedWorkspace) currentWorkspaceId.value = savedWorkspace
+  if (savedWorkspace) suggestedWorkspaceId.value = savedWorkspace
   if (saved) {
     currentUser.value = JSON.parse(saved)
+    sessionWorkspaceChosen.value = false
     startApp()
   }
 })
@@ -547,10 +568,12 @@ onUnmounted(() => stopApp())
 function openModal(type) { modals[type] = true }
 
 async function selectWorkspace(workspaceId) {
-  if (!workspaceId || workspaceId === currentWorkspaceId.value) return
+  if (!workspaceId) return
+  const changed = workspaceId !== currentWorkspaceId.value
   currentWorkspaceId.value = workspaceId
+  sessionWorkspaceChosen.value = true
   localStorage.setItem('squad_workspace', workspaceId)
-  await fetchWorkspaceData(workspaceId)
+  if (changed || !tasks.value.length) await fetchWorkspaceData(workspaceId)
   stopRealtimeSync()
   startRealtimeSync()
 }
