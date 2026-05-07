@@ -64,9 +64,28 @@
             class="rounded-lg px-3 py-2"
             style="background:var(--surface);border:1px solid var(--border)"
           >
-            <div class="text-sm font-medium truncate" style="color:var(--text)">{{ m.name }}</div>
-            <div class="text-xs truncate" style="color:var(--muted)">{{ m.role || 'Team Member' }}</div>
-            <div class="text-xs truncate" style="color:var(--muted)">{{ m.email || 'No email' }}</div>
+            <div class="flex items-start gap-3">
+              <div class="avatar" :style="{ background: m.avatarUrl ? 'transparent' : (m.color || 'var(--surface2)') }">
+                <img
+                  v-if="m.avatarUrl"
+                  :src="m.avatarUrl"
+                  alt="Profile"
+                  class="w-full h-full object-cover rounded-full"
+                />
+                <span v-else>{{ initials(m.name) }}</span>
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="text-sm font-medium truncate" style="color:var(--text)">{{ m.name }}</div>
+                <div class="text-xs truncate" style="color:var(--muted)">{{ m.role || 'Team Member' }}</div>
+                <div class="text-xs truncate" style="color:var(--muted)">{{ m.email || 'No email' }}</div>
+              </div>
+            </div>
+            <div class="mt-2 flex flex-wrap gap-1.5">
+              <span class="badge badge-blue">Assigned {{ memberTaskStats(m.id).assigned }}</span>
+              <span class="badge badge-yellow">Done {{ memberTaskStats(m.id).done }}</span>
+              <span class="badge badge-gray">Pending {{ memberTaskStats(m.id).pending }}</span>
+              <span class="badge badge-red">Follow-up {{ memberTaskStats(m.id).followUp }}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -88,4 +107,25 @@ const doneCount    = computed(() => props.tasks.filter(t => t.done || t.status =
 const openCount    = computed(() => props.tasks.length - doneCount.value)
 const overdueCount = computed(() => props.tasks.filter(t => isOverdue(t)).length)
 const progressPct  = computed(() => props.tasks.length === 0 ? 0 : Math.round(doneCount.value / props.tasks.length * 100))
+
+function initials(name) {
+  return (name || 'U')
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(part => part[0]?.toUpperCase() ?? '')
+    .join('')
+}
+
+function memberTaskStats(memberId) {
+  const mine = props.tasks.filter(t => t.assigneeId === memberId)
+  const done = mine.filter(t => t.done).length
+  const followUp = mine.filter(t => isOverdue(t)).length
+  return {
+    assigned: mine.length,
+    done,
+    pending: mine.length - done,
+    followUp,
+  }
+}
 </script>

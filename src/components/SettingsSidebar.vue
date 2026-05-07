@@ -23,20 +23,32 @@
       </button>
     </div>
 
-    <!-- Tab nav (admin + workspace owners) -->
+    <!-- Tab nav -->
     <div v-if="showTabNav" class="flex gap-1 px-6 py-3 flex-shrink-0" style="border-bottom:1px solid var(--border)">
-      <button class="tab-btn" :class="{ active: activeTab === 'members' }" @click="activeTab = 'members'">
-        <span class="material-icons" style="font-size:15px;vertical-align:-3px;margin-right:5px">group</span>
-        Members
-      </button>
-      <button class="tab-btn" :class="{ active: activeTab === 'statuses' }" @click="activeTab = 'statuses'">
-        <span class="material-icons" style="font-size:15px;vertical-align:-3px;margin-right:5px">view_kanban</span>
-        Task Statuses
-      </button>
-      <button class="tab-btn" :class="{ active: activeTab === 'workspaces' }" @click="activeTab = 'workspaces'">
-        <span class="material-icons" style="font-size:15px;vertical-align:-3px;margin-right:5px">workspaces</span>
-        Workspaces
-      </button>
+      <template v-if="currentUser.access === 'admin'">
+        <button class="tab-btn" :class="{ active: activeTab === 'members' }" @click="activeTab = 'members'">
+          <span class="material-icons" style="font-size:15px;vertical-align:-3px;margin-right:5px">group</span>
+          Members
+        </button>
+        <button class="tab-btn" :class="{ active: activeTab === 'statuses' }" @click="activeTab = 'statuses'">
+          <span class="material-icons" style="font-size:15px;vertical-align:-3px;margin-right:5px">view_kanban</span>
+          Task Statuses
+        </button>
+        <button class="tab-btn" :class="{ active: activeTab === 'workspaces' }" @click="activeTab = 'workspaces'">
+          <span class="material-icons" style="font-size:15px;vertical-align:-3px;margin-right:5px">workspaces</span>
+          Workspaces
+        </button>
+      </template>
+      <template v-else>
+        <button class="tab-btn" :class="{ active: activeTab === 'profile' }" @click="activeTab = 'profile'">
+          <span class="material-icons" style="font-size:15px;vertical-align:-3px;margin-right:5px">person</span>
+          Profile Information
+        </button>
+        <button class="tab-btn" :class="{ active: activeTab === 'workspaces' }" @click="activeTab = 'workspaces'">
+          <span class="material-icons" style="font-size:15px;vertical-align:-3px;margin-right:5px">workspaces</span>
+          Workspace
+        </button>
+      </template>
     </div>
 
     <!-- Scrollable body -->
@@ -53,7 +65,7 @@
           {{ isDark ? 'Light Mode' : 'Dark Mode' }}
         </button>
       </div>
-      <div class="px-6 py-4 flex flex-col gap-3" style="border-bottom:1px solid var(--border)">
+      <div v-if="currentUser.access === 'admin' || showUserProfileView" class="px-6 py-4 flex flex-col gap-3" style="border-bottom:1px solid var(--border)">
         <div class="text-sm font-medium">Profile Picture</div>
         <div class="flex items-center gap-3">
           <div class="avatar flex-shrink-0 overflow-hidden" :style="{ background: currentUser.color, color: '#0d0d0d' }">
@@ -83,7 +95,7 @@
       </div>
 
       <!-- ── USER: Change Password only ─────────────────────────── -->
-      <div v-if="showUserPasswordView" class="p-6 flex flex-col gap-4">
+      <div v-if="showUserProfileView" class="p-6 flex flex-col gap-4">
         <div>
           <div class="font-medium text-sm mb-0.5">Change Password</div>
           <div class="text-xs" style="color:var(--muted)">Update your login password</div>
@@ -147,6 +159,21 @@
           </div>
 
           <button class="btn-primary text-xs px-4 py-2" @click="savePassword">Save Password</button>
+        </div>
+
+      </div>
+
+      <div v-if="showWorkspaceQuickSection && currentWorkspace && activeTab === 'workspaces'" class="px-6 pb-6">
+        <div class="member-row flex flex-col gap-2">
+          <div class="font-medium text-sm">Workspace</div>
+          <div class="text-xs" style="color:var(--muted)">{{ currentWorkspace.name }}</div>
+          <button
+            class="btn-ghost text-xs px-3 py-1.5 self-start"
+            style="color:var(--accent2);border-color:rgba(255,71,71,0.35)"
+            @click="confirmLeaveWorkspace(currentWorkspace.id)"
+          >
+            Leave Workspace
+          </button>
         </div>
       </div>
 
@@ -379,13 +406,28 @@
           <button class="btn-primary text-xs px-3 py-1.5" @click="$emit('create-workspace', { name: `Workspace ${workspaces.length + 1}`, memberIds: [] })">Quick Create</button>
         </div>
 
-        <select class="field text-sm" :value="currentWorkspaceId" @change="selectedWorkspaceId = $event.target.value">
-          <option v-for="w in workspaces" :key="w.id" :value="w.id">{{ w.name }}</option>
+        <select class="field text-sm" v-model="selectedWorkspaceId">
+          <option v-for="w in manageableWorkspaces" :key="w.id" :value="w.id">{{ w.name }}</option>
         </select>
 
         <div v-if="selectedWorkspace" class="member-row flex flex-col gap-3">
           <input class="field text-sm" v-model="workspaceName" placeholder="Workspace name" />
           <button class="btn-primary text-xs px-4 py-2" @click="$emit('rename-workspace', { id: selectedWorkspace.id, name: workspaceName })">Save Name</button>
+          <button
+            v-if="currentUser.access === 'admin'"
+            class="btn-ghost text-xs px-4 py-2"
+            style="color:var(--accent2);border-color:rgba(255,71,71,0.35)"
+            @click="confirmDeleteWorkspace(selectedWorkspace.id)"
+          >
+            Delete Workspace
+          </button>
+          <button
+            class="btn-ghost text-xs px-4 py-2"
+            style="color:var(--accent2);border-color:rgba(255,71,71,0.35)"
+            @click="confirmLeaveWorkspace(selectedWorkspace.id)"
+          >
+            Leave Workspace
+          </button>
         </div>
 
         <div v-if="selectedWorkspace" class="member-row flex flex-col gap-2">
@@ -406,10 +448,79 @@
 
     </div>
   </div>
+
+  <div
+    v-if="leaveConfirmOpen"
+    class="fixed inset-0 z-[280] flex items-center justify-center p-4"
+    style="background:rgba(0,0,0,0.62)"
+    @click="cancelLeaveWorkspace"
+  >
+    <div
+      class="w-[min(92vw,420px)] rounded-xl p-5"
+      style="background:var(--surface2);border:1px solid var(--border);box-shadow:0 18px 44px rgba(0,0,0,0.42)"
+      @click.stop
+    >
+      <div class="flex items-center gap-2 mb-2">
+        <span class="material-icons" style="color:var(--accent2)">warning</span>
+        <div class="font-medium text-sm">Leave Workspace</div>
+      </div>
+      <p class="text-sm mb-4" style="color:var(--text)">
+        Are you sure you want to leave <span class="font-medium">"{{ leaveTargetWorkspaceName }}"</span>?
+      </p>
+      <p class="text-xs mb-4" style="color:var(--muted)">
+        You can only rejoin if someone adds you back.
+      </p>
+      <div class="flex items-center justify-end gap-2">
+        <button class="btn-ghost text-xs px-4 py-2" @click="cancelLeaveWorkspace">Cancel</button>
+        <button
+          class="btn-ghost text-xs px-4 py-2"
+          style="color:var(--accent2);border-color:rgba(255,71,71,0.35)"
+          @click="submitLeaveWorkspace"
+        >
+          Leave Workspace
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div
+    v-if="deleteConfirmOpen"
+    class="fixed inset-0 z-[281] flex items-center justify-center p-4"
+    style="background:rgba(0,0,0,0.68)"
+    @click="cancelDeleteWorkspace"
+  >
+    <div
+      class="w-[min(92vw,420px)] rounded-xl p-5"
+      style="background:var(--surface2);border:1px solid var(--border);box-shadow:0 18px 44px rgba(0,0,0,0.42)"
+      @click.stop
+    >
+      <div class="flex items-center gap-2 mb-2">
+        <span class="material-icons" style="color:var(--accent2)">delete_forever</span>
+        <div class="font-medium text-sm">Delete Workspace</div>
+      </div>
+      <p class="text-sm mb-4" style="color:var(--text)">
+        Delete <span class="font-medium">"{{ deleteTargetWorkspaceName }}"</span>?
+      </p>
+      <p class="text-xs mb-4" style="color:var(--muted)">
+        This action is permanent and will remove all tasks, reminders, notifications, chat messages, and activity in this workspace.
+      </p>
+      <div class="flex items-center justify-end gap-2">
+        <button class="btn-ghost text-xs px-4 py-2" @click="cancelDeleteWorkspace">Cancel</button>
+        <button
+          class="btn-ghost text-xs px-4 py-2"
+          style="color:var(--accent2);border-color:rgba(255,71,71,0.35)"
+          @click="submitDeleteWorkspace"
+        >
+          Delete Workspace
+        </button>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, watch } from 'vue'
+import { supabase } from '../lib/supabase.js'
 
 const props = defineProps({
   open:         Boolean,
@@ -424,7 +535,7 @@ const props = defineProps({
   workspaceMembers: Array,
 })
 
-const emit = defineEmits(['close', 'open-add-member', 'update-member', 'delete-member', 'update-status', 'set-done-status', 'add-status', 'delete-status', 'reorder-status', 'toggle-theme', 'create-workspace', 'rename-workspace', 'add-workspace-member', 'remove-workspace-member'])
+const emit = defineEmits(['close', 'open-add-member', 'update-member', 'delete-member', 'update-status', 'set-done-status', 'add-status', 'delete-status', 'reorder-status', 'toggle-theme', 'create-workspace', 'rename-workspace', 'add-workspace-member', 'remove-workspace-member', 'leave-workspace', 'delete-workspace'])
 
 const activeTab        = ref('members')
 const editingId        = ref(null)
@@ -433,8 +544,15 @@ const revealPwId       = ref(null)
 const showEditPw       = ref(false)
 const showAddStatus    = ref(false)
 const selectedWorkspaceId = ref('')
+const selectedWorkspaceMembers = ref([])
 const workspaceName = ref('')
 const memberToAdd = ref('')
+const leaveConfirmOpen = ref(false)
+const leaveTargetWorkspaceId = ref('')
+const leaveTargetWorkspaceName = ref('')
+const deleteConfirmOpen = ref(false)
+const deleteTargetWorkspaceId = ref('')
+const deleteTargetWorkspaceName = ref('')
 
 // user password change state
 const newPassword     = ref('')
@@ -533,15 +651,23 @@ const taskCountByStatus = computed(() => {
   return counts
 })
 
+const manageableWorkspaces = computed(() =>
+  props.currentUser?.access === 'admin'
+    ? props.workspaces
+    : props.workspaces.filter(w => w.ownerId === props.currentUser?.id)
+)
 const selectedWorkspace = computed(() =>
-  props.workspaces.find(w => w.id === (selectedWorkspaceId.value || props.currentWorkspaceId))
+  manageableWorkspaces.value.find(w => w.id === (selectedWorkspaceId.value || props.currentWorkspaceId)) ?? null
+)
+const currentWorkspace = computed(() =>
+  props.workspaces.find(w => w.id === props.currentWorkspaceId) ?? null
 )
 const canManageSelectedWorkspace = computed(() =>
   props.currentUser?.access === 'admin' || selectedWorkspace.value?.ownerId === props.currentUser?.id
 )
 const membersInSelectedWorkspace = computed(() => {
   if (!selectedWorkspace.value) return []
-  const ids = new Set(props.workspaceMembers.filter(wm => wm.workspace_id === selectedWorkspace.value.id).map(wm => wm.member_id))
+  const ids = new Set(selectedWorkspaceMembers.value.map(wm => wm.member_id))
   return props.members.filter(m => ids.has(m.id))
 })
 const availableMembersToAdd = computed(() => {
@@ -552,16 +678,77 @@ const hasOwnedWorkspace = computed(() =>
   props.workspaces.some(w => w.ownerId === props.currentUser?.id)
 )
 const showTabNav = computed(() =>
-  props.currentUser?.access === 'admin' || hasOwnedWorkspace.value
+  props.currentUser?.access === 'admin' || props.currentUser?.access === 'user'
 )
-const showUserPasswordView = computed(() =>
-  props.currentUser?.access === 'user' && !showTabNav.value
+const showUserProfileView = computed(() =>
+  props.currentUser?.access === 'user' && activeTab.value === 'profile'
+)
+const showWorkspaceQuickSection = computed(() =>
+  props.currentUser?.access === 'user' && !hasOwnedWorkspace.value
 )
 
 function emitAddMember() {
   if (!selectedWorkspace.value || !memberToAdd.value) return
   emit('add-workspace-member', { workspaceId: selectedWorkspace.value.id, memberId: memberToAdd.value })
   memberToAdd.value = ''
+}
+
+function confirmLeaveWorkspace(workspaceId) {
+  if (!workspaceId) return
+  const workspace = props.workspaces.find(w => w.id === workspaceId)
+  leaveTargetWorkspaceId.value = workspaceId
+  leaveTargetWorkspaceName.value = workspace?.name ?? 'this workspace'
+  leaveConfirmOpen.value = true
+}
+
+function cancelLeaveWorkspace() {
+  leaveConfirmOpen.value = false
+  leaveTargetWorkspaceId.value = ''
+  leaveTargetWorkspaceName.value = ''
+}
+
+function submitLeaveWorkspace() {
+  if (!leaveTargetWorkspaceId.value) return
+  emit('leave-workspace', leaveTargetWorkspaceId.value)
+  cancelLeaveWorkspace()
+}
+
+function confirmDeleteWorkspace(workspaceId) {
+  if (!workspaceId) return
+  const workspace = props.workspaces.find(w => w.id === workspaceId)
+  deleteTargetWorkspaceId.value = workspaceId
+  deleteTargetWorkspaceName.value = workspace?.name ?? 'this workspace'
+  deleteConfirmOpen.value = true
+}
+
+function cancelDeleteWorkspace() {
+  deleteConfirmOpen.value = false
+  deleteTargetWorkspaceId.value = ''
+  deleteTargetWorkspaceName.value = ''
+}
+
+function submitDeleteWorkspace() {
+  if (!deleteTargetWorkspaceId.value) return
+  emit('delete-workspace', deleteTargetWorkspaceId.value)
+  cancelDeleteWorkspace()
+}
+
+async function fetchSelectedWorkspaceMembers(workspaceId) {
+  if (!workspaceId) {
+    selectedWorkspaceMembers.value = []
+    return
+  }
+
+  if (workspaceId === props.currentWorkspaceId) {
+    selectedWorkspaceMembers.value = props.workspaceMembers ?? []
+    return
+  }
+
+  const { data } = await supabase
+    .from('workspace_members')
+    .select('*')
+    .eq('workspace_id', workspaceId)
+  selectedWorkspaceMembers.value = data ?? []
 }
 
 function initials(name) {
@@ -607,15 +794,34 @@ watch(() => props.currentWorkspaceId, (id) => {
   selectedWorkspaceId.value = id
 }, { immediate: true })
 
+watch(manageableWorkspaces, (items) => {
+  if (!items.length) {
+    selectedWorkspaceId.value = ''
+    return
+  }
+  const isCurrentSelectable = items.some(w => w.id === selectedWorkspaceId.value)
+  if (!isCurrentSelectable) selectedWorkspaceId.value = items[0].id
+}, { immediate: true })
+
+watch(
+  () => [selectedWorkspaceId.value, props.currentWorkspaceId, props.workspaceMembers],
+  async () => {
+    await fetchSelectedWorkspaceMembers(selectedWorkspaceId.value || props.currentWorkspaceId)
+  },
+  { immediate: true }
+)
+
 watch(selectedWorkspace, (w) => {
   workspaceName.value = w?.name ?? ''
 }, { immediate: true })
 
 watch(showTabNav, (show) => {
   if (!show) return
-  if (activeTab.value === 'members' || activeTab.value === 'statuses') {
-    if (props.currentUser?.access !== 'admin') activeTab.value = 'workspaces'
+  if (props.currentUser?.access === 'user') {
+    if (activeTab.value !== 'profile' && activeTab.value !== 'workspaces') activeTab.value = 'profile'
+    return
   }
+  if (activeTab.value === 'profile') activeTab.value = 'members'
 }, { immediate: true })
 </script>
 

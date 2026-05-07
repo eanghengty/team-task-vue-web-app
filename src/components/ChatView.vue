@@ -23,39 +23,74 @@
       <article
         v-for="msg in messages"
         :key="msg.id"
-        class="rounded-lg px-3 py-2"
-        style="border:1px solid var(--border);background:var(--surface)"
+        class="flex gap-2"
+        :class="isOwnMessage(msg) ? 'justify-end' : 'justify-start'"
       >
-        <div class="flex items-center justify-between gap-3 mb-1">
-          <div class="text-sm font-semibold" style="color:var(--text)">
-            {{ memberName(msg.senderId) }}
-          </div>
-          <time class="font-mono text-[11px]" style="color:var(--muted)">
-            {{ formatTime(msg.createdAt) }}
-          </time>
+        <div
+          v-if="!isOwnMessage(msg)"
+          class="avatar mt-1"
+          :style="avatarStyle(memberById(msg.senderId))"
+          :title="memberName(msg.senderId)"
+        >
+          <img
+            v-if="memberById(msg.senderId)?.avatarUrl"
+            :src="memberById(msg.senderId)?.avatarUrl"
+            alt="Profile"
+            class="w-full h-full object-cover rounded-full"
+          />
+          <span v-else>{{ memberInitials(msg.senderId) }}</span>
         </div>
 
         <div
-          v-if="replyContext(msg)"
-          class="rounded px-2 py-1 mb-2 text-xs"
-          style="border-left:3px solid var(--accent3);background:var(--surface-2);color:var(--muted)"
+          class="rounded-lg px-3 py-2 max-w-[85%] sm:max-w-[72%]"
+          :style="messageBubbleStyle(isOwnMessage(msg))"
         >
-          <span class="font-semibold" style="color:var(--text)">{{ replyContext(msg).name }}</span>
-          <span class="mx-1">-</span>
-          <span>{{ replyContext(msg).preview }}</span>
+          <div class="flex items-center justify-between gap-3 mb-1">
+            <div class="text-sm font-semibold" style="color:var(--text)">
+              {{ memberName(msg.senderId) }}
+            </div>
+            <time class="font-mono text-[11px]" style="color:var(--muted)">
+              {{ formatTime(msg.createdAt) }}
+            </time>
+          </div>
+
+          <div
+            v-if="replyContext(msg)"
+            class="rounded px-2 py-1 mb-2 text-xs text-left"
+            style="border-left:3px solid var(--accent3);background:var(--surface2);color:var(--muted)"
+          >
+            <span class="font-semibold" style="color:var(--text)">{{ replyContext(msg).name }}</span>
+            <span class="mx-1">-</span>
+            <span>{{ replyContext(msg).preview }}</span>
+          </div>
+
+          <p class="text-sm whitespace-pre-wrap break-words">{{ msg.content }}</p>
+          <div class="mt-2 flex items-center gap-2">
+            <button class="btn-ghost text-xs px-2 py-1" @click="setReplyTarget(msg)">Reply</button>
+            <button
+              v-if="isAdmin"
+              class="btn-ghost text-xs px-2 py-1"
+              style="color:var(--accent2);border-color:rgba(255,71,71,0.35)"
+              @click="confirmDeleteMessage(msg.id)"
+            >
+              Delete
+            </button>
+          </div>
         </div>
 
-        <p class="text-sm whitespace-pre-wrap break-words">{{ msg.content }}</p>
-        <div class="mt-2 flex items-center gap-2">
-          <button class="btn-ghost text-xs px-2 py-1" @click="setReplyTarget(msg)">Reply</button>
-          <button
-            v-if="isAdmin"
-            class="btn-ghost text-xs px-2 py-1"
-            style="color:var(--accent2);border-color:rgba(255,71,71,0.35)"
-            @click="confirmDeleteMessage(msg.id)"
-          >
-            Delete
-          </button>
+        <div
+          v-if="isOwnMessage(msg)"
+          class="avatar mt-1"
+          :style="avatarStyle(memberById(msg.senderId))"
+          :title="memberName(msg.senderId)"
+        >
+          <img
+            v-if="memberById(msg.senderId)?.avatarUrl"
+            :src="memberById(msg.senderId)?.avatarUrl"
+            alt="Profile"
+            class="w-full h-full object-cover rounded-full"
+          />
+          <span v-else>{{ memberInitials(msg.senderId) }}</span>
         </div>
       </article>
     </div>
@@ -108,6 +143,44 @@ const isAdmin = computed(() => props.currentUser?.access === 'admin')
 
 function memberName(senderId) {
   return props.members.find(m => m.id === senderId)?.name ?? 'Unknown Member'
+}
+
+function memberById(senderId) {
+  return props.members.find(m => m.id === senderId) ?? null
+}
+
+function memberInitials(senderId) {
+  const name = memberName(senderId)
+  return name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(part => part[0]?.toUpperCase() ?? '')
+    .join('') || 'U'
+}
+
+function avatarStyle(member) {
+  return {
+    background: member?.avatarUrl ? 'transparent' : (member?.color || 'var(--surface2)'),
+    color: '#ffffff',
+  }
+}
+
+function isOwnMessage(msg) {
+  return msg.senderId === props.currentUser?.id
+}
+
+function messageBubbleStyle(isOwn) {
+  if (isOwn) {
+    return {
+      border: '1px solid rgba(71,197,255,0.35)',
+      background: 'rgba(71,197,255,0.12)',
+    }
+  }
+  return {
+    border: '1px solid var(--border)',
+    background: 'var(--surface)',
+  }
 }
 
 function formatTime(value) {

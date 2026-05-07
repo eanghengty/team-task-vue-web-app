@@ -227,8 +227,10 @@
       @reorder-status="reorderColumn"
       @create-workspace="createWorkspace"
       @rename-workspace="updateWorkspace"
+      @delete-workspace="deleteWorkspace"
       @add-workspace-member="addWorkspaceMember"
       @remove-workspace-member="removeWorkspaceMember"
+      @leave-workspace="leaveWorkspace"
     />
     <AddWorkspaceModal
       :open="modals.workspace"
@@ -524,6 +526,8 @@ const workspaceMemberDetails = computed(() => {
       name: m.name,
       role: m.role,
       email: m.email,
+      color: m.color,
+      avatarUrl: m.avatarUrl,
     }))
 })
 
@@ -749,7 +753,61 @@ async function notifyWorkspaceMembers(type, message, workspaceId, senderId) {
 }
 
 // ── app lifecycle ─────────────────────────────────────────────────────────────
-let clockInterval, reminderInterval, taskChannel, notifChannel, chatChannel
+let clockInterval, reminderInterval, taskChannel, notifChannel, chatChannel, memberChannel
+let handlingWorkspaceRevocation = false
+
+function isWorkspaceOwner(workspaceId = currentWorkspaceId.value) {
+  if (!workspaceId || !currentUser.value) return false
+  return workspaces.value.some(w => w.id === workspaceId && w.ownerId === currentUser.value.id)
+}
+
+async function handleWorkspaceAccessRevoked() {
+  if (handlingWorkspaceRevocation) return
+  handlingWorkspaceRevocation = true
+  stopRealtimeSync()
+  showSettings.value = false
+  showNotifications.value = false
+  showToast('Access Removed', 'You were removed from this workspace', 'red')
+
+  try {
+    await fetchWorkspaces()
+    const nextWorkspaceId = workspaces.value[0]?.id ?? ''
+    tasks.value = []
+    reminders.value = []
+    workspaceMembers.value = []
+    chatMessages.value = []
+    chatLastReadAt.value = null
+
+    if (nextWorkspaceId) {
+      await selectWorkspace(nextWorkspaceId)
+    } else {
+      currentWorkspaceId.value = ''
+      sessionWorkspaceChosen.value = false
+      localStorage.removeItem('squad_workspace')
+    }
+  } finally {
+    handlingWorkspaceRevocation = false
+  }
+}
+
+async function ensureWorkspaceAccessFresh() {
+  if (!currentUser.value || !currentWorkspaceId.value) return false
+  if (currentUser.value.access === 'admin') return true
+  if (isWorkspaceOwner(currentWorkspaceId.value)) return true
+
+  const { data, error } = await supabase
+    .from('workspace_members')
+    .select('member_id')
+    .eq('workspace_id', currentWorkspaceId.value)
+    .eq('member_id', currentUser.value.id)
+    .maybeSingle()
+
+  if (error || !data) {
+    await handleWorkspaceAccessRevoked()
+    return false
+  }
+  return true
+}
 
 function startRealtimeSync() {
   if (!currentWorkspaceId.value) return
@@ -773,9 +831,15 @@ function startRealtimeSync() {
       }
     })
     .on('postgres_changes', {
-      event: 'DELETE', schema: 'public', table: 'tasks', filter: `workspace_id=eq.${currentWorkspaceId.value}`,
+      event: 'DELETE', schema: 'public', table: 'tasks',
     }, ({ old: row }) => {
+      if (!row?.id) return
       tasks.value = tasks.value.filter(t => t.id !== row.id)
+      reminders.value = reminders.value.filter(r => r.taskId !== row.id)
+      if (detailTask.value?.id === row.id) {
+        detailTask.value = null
+        modals.detail = false
+      }
     })
     .subscribe((status, err) => {
       if (err) console.error('[tasks channel]', err)
@@ -842,12 +906,43 @@ function startRealtimeSync() {
       if (err) console.error('[chat channel]', err)
       else console.log('[chat channel]', status)
     })
+
+  memberChannel = supabase
+    .channel('db-workspace-members')
+    .on('postgres_changes', {
+      event: 'INSERT', schema: 'public', table: 'workspace_members',
+      filter: `workspace_id=eq.${currentWorkspaceId.value}`,
+    }, ({ new: row }) => {
+      if (!workspaceMembers.value.find(wm => wm.workspace_id === row.workspace_id && wm.member_id === row.member_id)) {
+        workspaceMembers.value.push(row)
+      }
+    })
+    .on('postgres_changes', {
+      event: 'DELETE', schema: 'public', table: 'workspace_members',
+      filter: `workspace_id=eq.${currentWorkspaceId.value}`,
+    }, async ({ old: row }) => {
+      workspaceMembers.value = workspaceMembers.value.filter(wm =>
+        !(wm.workspace_id === row.workspace_id && wm.member_id === row.member_id)
+      )
+      if (
+        row?.member_id === currentUser.value?.id &&
+        currentUser.value?.access !== 'admin' &&
+        !isWorkspaceOwner(currentWorkspaceId.value)
+      ) {
+        await handleWorkspaceAccessRevoked()
+      }
+    })
+    .subscribe((status, err) => {
+      if (err) console.error('[workspace members channel]', err)
+      else console.log('[workspace members channel]', status)
+    })
 }
 
 function stopRealtimeSync() {
   if (taskChannel) { supabase.removeChannel(taskChannel); taskChannel = null }
   if (notifChannel) { supabase.removeChannel(notifChannel); notifChannel = null }
   if (chatChannel) { supabase.removeChannel(chatChannel); chatChannel = null }
+  if (memberChannel) { supabase.removeChannel(memberChannel); memberChannel = null }
 }
 
 async function startApp() {
@@ -1019,7 +1114,7 @@ async function selectWorkspace(workspaceId) {
 function canAccessCurrentWorkspace() {
   if (!currentUser.value || !currentWorkspaceId.value) return false
   if (currentUser.value.access === 'admin') return true
-  const isOwner = workspaces.value.some(w => w.id === currentWorkspaceId.value && w.ownerId === currentUser.value.id)
+  const isOwner = isWorkspaceOwner(currentWorkspaceId.value)
   if (isOwner) return true
   return workspaceMembers.value.some(wm => wm.member_id === currentUser.value.id)
 }
@@ -1050,6 +1145,48 @@ async function updateWorkspace({ id, name }) {
   else showToast('Workspace Updated', workspace.name, 'blue')
 }
 
+async function deleteWorkspace(workspaceId) {
+  const workspace = workspaces.value.find(w => w.id === workspaceId)
+  if (!workspace) return
+  if (currentUser.value?.access !== 'admin') {
+    showToast('Permission Denied', 'Only admins can delete workspaces', 'red')
+    return
+  }
+
+  const deletingCurrent = workspaceId === currentWorkspaceId.value
+  const { error } = await supabase.from('workspaces').delete().eq('id', workspaceId)
+  if (error) {
+    showToast('Error', 'Could not delete workspace', 'red')
+    return
+  }
+
+  showToast('Workspace Deleted', workspace.name, 'yellow')
+  await fetchWorkspaces()
+
+  if (deletingCurrent) {
+    stopRealtimeSync()
+    tasks.value = []
+    reminders.value = []
+    workspaceMembers.value = []
+    chatMessages.value = []
+    chatLastReadAt.value = null
+    const nextWorkspaceId = workspaces.value[0]?.id ?? ''
+    if (nextWorkspaceId) {
+      await selectWorkspace(nextWorkspaceId)
+    } else {
+      currentWorkspaceId.value = ''
+      sessionWorkspaceChosen.value = false
+      localStorage.removeItem('squad_workspace')
+    }
+    return
+  }
+
+  if (!workspaces.value.some(w => w.id === currentWorkspaceId.value)) {
+    const nextWorkspaceId = workspaces.value[0]?.id ?? ''
+    if (nextWorkspaceId) await selectWorkspace(nextWorkspaceId)
+  }
+}
+
 async function addWorkspaceMember({ workspaceId, memberId }) {
   const workspace = workspaces.value.find(w => w.id === workspaceId)
   if (!workspace) return
@@ -1062,9 +1199,36 @@ async function addWorkspaceMember({ workspaceId, memberId }) {
 async function removeWorkspaceMember({ workspaceId, memberId }) {
   const workspace = workspaces.value.find(w => w.id === workspaceId)
   if (!workspace) return
-  if (currentUser.value.access !== 'admin' && workspace.ownerId !== currentUser.value.id) return
+  const isSelfLeave = memberId === currentUser.value?.id
+  if (!isSelfLeave && currentUser.value.access !== 'admin' && workspace.ownerId !== currentUser.value.id) return
   await supabase.from('workspace_members').delete().eq('workspace_id', workspaceId).eq('member_id', memberId)
+  if (isSelfLeave) {
+    await fetchWorkspaces()
+    const nextWorkspaceId = workspaces.value[0]?.id ?? ''
+    if (workspaceId === currentWorkspaceId.value) {
+      stopRealtimeSync()
+      chatMessages.value = []
+      chatLastReadAt.value = null
+      tasks.value = []
+      reminders.value = []
+      workspaceMembers.value = []
+      if (nextWorkspaceId) {
+        await selectWorkspace(nextWorkspaceId)
+      } else {
+        currentWorkspaceId.value = ''
+        sessionWorkspaceChosen.value = false
+        localStorage.removeItem('squad_workspace')
+      }
+    }
+    showToast('Left Workspace', workspace.name, 'yellow')
+    return
+  }
   if (workspaceId === currentWorkspaceId.value) await fetchWorkspaceData(workspaceId)
+}
+
+async function leaveWorkspace(workspaceId) {
+  if (!currentUser.value || !workspaceId) return
+  await removeWorkspaceMember({ workspaceId, memberId: currentUser.value.id })
 }
 
 function openDetail(task) {
@@ -1091,6 +1255,7 @@ async function logActivity(action, entityType, entityId, message) {
 async function addTask() {
   if (taskSubmitting.value) return
   if (!canAccessCurrentWorkspace()) return
+  if (!(await ensureWorkspaceAccessFresh())) return
   if (!form.title.trim())  { triggerShake('taskTitle');    return }
   if (!form.assigneeId)    { triggerShake('taskAssignee'); return }
 
