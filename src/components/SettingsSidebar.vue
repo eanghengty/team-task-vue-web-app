@@ -33,6 +33,10 @@
         <span class="material-icons" style="font-size:15px;vertical-align:-3px;margin-right:5px">view_kanban</span>
         Task Statuses
       </button>
+      <button class="tab-btn" :class="{ active: activeTab === 'workspaces' }" @click="activeTab = 'workspaces'">
+        <span class="material-icons" style="font-size:15px;vertical-align:-3px;margin-right:5px">workspaces</span>
+        Workspaces
+      </button>
     </div>
 
     <!-- Scrollable body -->
@@ -315,12 +319,43 @@
         </div>
       </div>
 
+      <div v-if="activeTab === 'workspaces' && (currentUser.access === 'admin' || canManageSelectedWorkspace)" class="p-6 flex flex-col gap-4">
+        <div class="flex items-center justify-between">
+          <p class="text-xs font-mono" style="color:var(--muted)">WORKSPACES</p>
+          <button class="btn-primary text-xs px-3 py-1.5" @click="$emit('create-workspace', { name: `Workspace ${workspaces.length + 1}`, memberIds: [] })">Quick Create</button>
+        </div>
+
+        <select class="field text-sm" :value="currentWorkspaceId" @change="selectedWorkspaceId = $event.target.value">
+          <option v-for="w in workspaces" :key="w.id" :value="w.id">{{ w.name }}</option>
+        </select>
+
+        <div v-if="selectedWorkspace" class="member-row flex flex-col gap-3">
+          <input class="field text-sm" v-model="workspaceName" placeholder="Workspace name" />
+          <button class="btn-primary text-xs px-4 py-2" @click="$emit('rename-workspace', { id: selectedWorkspace.id, name: workspaceName })">Save Name</button>
+        </div>
+
+        <div v-if="selectedWorkspace" class="member-row flex flex-col gap-2">
+          <div class="text-xs font-mono" style="color:var(--muted)">MEMBERS</div>
+          <div v-for="m in membersInSelectedWorkspace" :key="m.id" class="flex items-center justify-between text-sm">
+            <span>{{ m.name }}</span>
+            <button v-if="m.id !== selectedWorkspace.ownerId" class="icon-btn" @click="$emit('remove-workspace-member', { workspaceId: selectedWorkspace.id, memberId: m.id })">
+              <span class="material-icons" style="font-size:16px">person_remove</span>
+            </button>
+          </div>
+          <select class="field text-sm mt-2" v-model="memberToAdd">
+            <option value="">Add member...</option>
+            <option v-for="m in availableMembersToAdd" :key="m.id" :value="m.id">{{ m.name }}</option>
+          </select>
+          <button class="btn-ghost text-xs px-3 py-1.5" :disabled="!memberToAdd" @click="emitAddMember">Add Member</button>
+        </div>
+      </div>
+
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 
 const props = defineProps({
   open:         Boolean,
@@ -330,9 +365,12 @@ const props = defineProps({
   memberColors: Array,
   currentUser:  Object,
   isDark:       Boolean,
+  workspaces:   Array,
+  currentWorkspaceId: String,
+  workspaceMembers: Array,
 })
 
-const emit = defineEmits(['close', 'open-add-member', 'update-member', 'delete-member', 'update-status', 'add-status', 'delete-status', 'reorder-status', 'toggle-theme'])
+const emit = defineEmits(['close', 'open-add-member', 'update-member', 'delete-member', 'update-status', 'add-status', 'delete-status', 'reorder-status', 'toggle-theme', 'create-workspace', 'rename-workspace', 'add-workspace-member', 'remove-workspace-member'])
 
 const activeTab        = ref('members')
 const editingId        = ref(null)
@@ -340,6 +378,9 @@ const editingStatusKey = ref(null)
 const revealPwId       = ref(null)
 const showEditPw       = ref(false)
 const showAddStatus    = ref(false)
+const selectedWorkspaceId = ref('')
+const workspaceName = ref('')
+const memberToAdd = ref('')
 
 // user password change state
 const newPassword     = ref('')
@@ -386,6 +427,28 @@ const taskCountByStatus = computed(() => {
   return counts
 })
 
+const selectedWorkspace = computed(() =>
+  props.workspaces.find(w => w.id === (selectedWorkspaceId.value || props.currentWorkspaceId))
+)
+const canManageSelectedWorkspace = computed(() =>
+  props.currentUser?.access === 'admin' || selectedWorkspace.value?.ownerId === props.currentUser?.id
+)
+const membersInSelectedWorkspace = computed(() => {
+  if (!selectedWorkspace.value) return []
+  const ids = new Set(props.workspaceMembers.filter(wm => wm.workspace_id === selectedWorkspace.value.id).map(wm => wm.member_id))
+  return props.members.filter(m => ids.has(m.id))
+})
+const availableMembersToAdd = computed(() => {
+  const existing = new Set(membersInSelectedWorkspace.value.map(m => m.id))
+  return props.members.filter(m => !existing.has(m.id))
+})
+
+function emitAddMember() {
+  if (!selectedWorkspace.value || !memberToAdd.value) return
+  emit('add-workspace-member', { workspaceId: selectedWorkspace.value.id, memberId: memberToAdd.value })
+  memberToAdd.value = ''
+}
+
 function initials(name) {
   return (name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
 }
@@ -423,6 +486,14 @@ function saveStatusEdit(status) {
   emit('update-status', { status, label: statusEditForm.label, dot: statusEditForm.dot })
   editingStatusKey.value = null
 }
+
+watch(() => props.currentWorkspaceId, (id) => {
+  selectedWorkspaceId.value = id
+}, { immediate: true })
+
+watch(selectedWorkspace, (w) => {
+  workspaceName.value = w?.name ?? ''
+}, { immediate: true })
 </script>
 
 <style scoped>

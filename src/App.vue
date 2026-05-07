@@ -13,9 +13,13 @@
       :clock="clock"
       :current-user="currentUser"
       :unread-count="unreadCount"
+      :workspaces="workspaces"
+      :current-workspace-id="currentWorkspaceId"
       @open-modal="openModal"
       @open-settings="showSettings = true"
       @open-notifications="showNotifications = !showNotifications"
+      @select-workspace="selectWorkspace"
+      @open-workspace-modal="modals.workspace = true"
       @logout="logout"
     />
     <ToastContainer :toasts="toasts" @remove="removeToast" />
@@ -63,14 +67,14 @@
           @open-modal="openModal"
           @delete-reminder="deleteReminder"
         />
-        <ActivityLogView v-if="currentTab === 'activity'" />
+        <ActivityLogView v-if="currentTab === 'activity'" :workspace-id="currentWorkspaceId" />
       </template>
     </main>
 
     <AddTaskModal
       :open="modals.add"
       :form="form"
-      :members="members"
+      :members="workspaceAssignableMembers"
       :columns="columns"
       :shaking="shaking"
       :current-user="currentUser"
@@ -91,6 +95,7 @@
       :members="members"
       :columns="columns"
       :current-user="currentUser"
+      :workspace-id="currentWorkspaceId"
       @close="modals.detail = false"
       @toggle-done="toggleDone"
       @delete-task="deleteTask"
@@ -108,6 +113,9 @@
     <SettingsSidebar
       :open="showSettings"
       :members="members"
+      :workspaces="workspaces"
+      :current-workspace-id="currentWorkspaceId"
+      :workspace-members="workspaceMembers"
       :columns="columns"
       :tasks="tasks"
       :member-colors="memberColors"
@@ -122,6 +130,17 @@
       @add-status="addStatus"
       @delete-status="deleteStatus"
       @reorder-status="reorderColumn"
+      @create-workspace="createWorkspace"
+      @rename-workspace="updateWorkspace"
+      @add-workspace-member="addWorkspaceMember"
+      @remove-workspace-member="removeWorkspaceMember"
+    />
+    <AddWorkspaceModal
+      :open="modals.workspace"
+      :members="members"
+      :current-user="currentUser"
+      @close="modals.workspace = false"
+      @submit="createWorkspace"
     />
     <NotificationPanel
       :open="showNotifications"
@@ -151,6 +170,7 @@ import AddTaskModal     from './components/AddTaskModal.vue'
 import AddReminderModal from './components/AddReminderModal.vue'
 import TaskDetailModal  from './components/TaskDetailModal.vue'
 import AddMemberModal   from './components/AddMemberModal.vue'
+import AddWorkspaceModal from './components/AddWorkspaceModal.vue'
 import SettingsSidebar  from './components/SettingsSidebar.vue'
 import NotificationPanel from './components/NotificationPanel.vue'
 
@@ -185,6 +205,9 @@ function logout() {
   localStorage.removeItem('squad_user')
   stopApp()
   members.value       = []
+  workspaces.value    = []
+  workspaceMembers.value = []
+  currentWorkspaceId.value = ''
   tasks.value         = []
   reminders.value     = []
   columns.value       = []
@@ -206,12 +229,15 @@ const showNotifications = ref(false)
 const isDark            = ref(localStorage.getItem('squad_theme') !== 'light')
 
 const members       = ref([])
+const workspaces    = ref([])
+const workspaceMembers = ref([])
+const currentWorkspaceId = ref('')
 const tasks         = ref([])
 const reminders     = ref([])
 const notifications = ref([])
 const toasts        = ref([])
 
-const modals     = reactive({ add: false, reminder: false, detail: false, member: false })
+const modals     = reactive({ add: false, reminder: false, detail: false, member: false, workspace: false })
 const form       = reactive({ title: '', desc: '', assigneeId: '', priority: 'medium', due: '', status: 'todo', reminderDt: '' })
 const remForm    = reactive({ title: '', taskId: '', datetime: '', assigneeId: 'team' })
 const memberForm = reactive({ name: '', role: '', email: '', password: '', access: 'user', color: '#e8ff47' })
@@ -222,6 +248,7 @@ const shaking    = reactive({ taskTitle: false, taskAssignee: false })
 function mapTask(row) {
   return {
     id:         row.id,
+    workspaceId: row.workspace_id,
     title:      row.title,
     desc:       row.description,
     assigneeId: row.assignee_id,
@@ -237,6 +264,7 @@ function mapTask(row) {
 function mapReminder(row) {
   return {
     id:         row.id,
+    workspaceId: row.workspace_id,
     title:      row.title,
     taskId:     row.task_id,
     datetime:   row.datetime,
@@ -264,12 +292,22 @@ function mapStatus(row) {
 function mapNotification(row) {
   return {
     id:        row.id,
+    workspaceId: row.workspace_id,
     memberId:  row.member_id,
     senderId:  row.sender_id,
     type:      row.type,
     message:   row.message,
     taskId:    row.task_id,
     read:      row.read,
+    createdAt: row.created_at,
+  }
+}
+
+function mapWorkspace(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    ownerId: row.owner_id,
     createdAt: row.created_at,
   }
 }
@@ -282,42 +320,80 @@ const filteredTasks = computed(() => tasks.value.filter(t =>
 
 const pendingReminders = computed(() => reminders.value.filter(r => !r.fired))
 const unreadCount      = computed(() => notifications.value.filter(n => !n.read).length)
+const workspaceAssignableMembers = computed(() => {
+  const memberIds = new Set(workspaceMembers.value.map(wm => wm.member_id))
+  return members.value.filter(m => memberIds.has(m.id) || m.access === 'admin')
+})
 
 const columns = ref([])
 
 // ── data fetching ─────────────────────────────────────────────────────────────
 async function fetchAll() {
   loading.value = true
-  const [mRes, tRes, rRes, sRes] = await Promise.all([
+  const [mRes, sRes] = await Promise.all([
     supabase.from('members').select('*').order('created_at'),
-    supabase.from('tasks').select('*').order('created_at'),
-    supabase.from('reminders').select('*').order('created_at'),
     supabase.from('task_statuses').select('*').order('sort_order'),
   ])
-  if (mRes.error || tRes.error || rRes.error || sRes.error) {
+  if (mRes.error || sRes.error) {
     showToast('Load Error', 'Could not fetch data from Supabase', 'red')
   } else {
     members.value   = mRes.data.map(mapMember)
-    tasks.value     = tRes.data.map(mapTask)
-    reminders.value = rRes.data.map(mapReminder)
     columns.value   = sRes.data.map(mapStatus)
     form.status     = columns.value[0]?.status ?? 'todo'
   }
+  await fetchWorkspaces()
+  if (!currentWorkspaceId.value && workspaces.value.length) {
+    currentWorkspaceId.value = workspaces.value[0].id
+  }
+  if (currentWorkspaceId.value) {
+    await fetchWorkspaceData(currentWorkspaceId.value)
+  }
   loading.value = false
-  await fetchNotifications()
 }
 
 async function fetchTasks() {
-  const { data } = await supabase.from('tasks').select('*').order('created_at')
+  if (!currentWorkspaceId.value) return
+  const { data } = await supabase.from('tasks').select('*').eq('workspace_id', currentWorkspaceId.value).order('created_at')
   if (data) tasks.value = data.map(mapTask)
 }
 
-async function fetchNotifications() {
+async function fetchWorkspaces() {
   if (!currentUser.value) return
+  if (currentUser.value.access === 'admin') {
+    const { data } = await supabase.from('workspaces').select('*').order('created_at')
+    workspaces.value = (data ?? []).map(mapWorkspace)
+  } else {
+    const { data } = await supabase
+      .from('workspace_members')
+      .select('workspace:workspace_id(*)')
+      .eq('member_id', currentUser.value.id)
+    workspaces.value = (data ?? []).map(row => mapWorkspace(row.workspace)).filter(Boolean)
+  }
+  if (currentWorkspaceId.value && !workspaces.value.some(w => w.id === currentWorkspaceId.value)) {
+    currentWorkspaceId.value = ''
+  }
+}
+
+async function fetchWorkspaceData(workspaceId) {
+  if (!workspaceId) return
+  const [tRes, rRes, wmRes] = await Promise.all([
+    supabase.from('tasks').select('*').eq('workspace_id', workspaceId).order('created_at'),
+    supabase.from('reminders').select('*').eq('workspace_id', workspaceId).order('created_at'),
+    supabase.from('workspace_members').select('*').eq('workspace_id', workspaceId),
+  ])
+  tasks.value = (tRes.data ?? []).map(mapTask)
+  reminders.value = (rRes.data ?? []).map(mapReminder)
+  workspaceMembers.value = wmRes.data ?? []
+  await fetchNotifications()
+}
+
+async function fetchNotifications() {
+  if (!currentUser.value || !currentWorkspaceId.value) return
   const { data } = await supabase
     .from('notifications')
     .select('*')
     .eq('member_id', currentUser.value.id)
+    .eq('workspace_id', currentWorkspaceId.value)
     .order('created_at', { ascending: false })
     .limit(50)
   if (data) notifications.value = data.map(mapNotification)
@@ -332,6 +408,7 @@ async function notifyAdmins(type, message, taskId) {
     adminIds.map(id => ({
       member_id: id,
       sender_id: currentUser.value.id,
+      workspace_id: currentWorkspaceId.value,
       type,
       message,
       task_id: taskId ?? null,
@@ -343,19 +420,26 @@ async function notifyAdmins(type, message, taskId) {
 let clockInterval, reminderInterval, taskChannel, notifChannel
 
 function startRealtimeSync() {
+  if (!currentWorkspaceId.value) return
   taskChannel = supabase
     .channel('db-tasks')
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'tasks' }, ({ new: row }) => {
+    .on('postgres_changes', {
+      event: 'INSERT', schema: 'public', table: 'tasks', filter: `workspace_id=eq.${currentWorkspaceId.value}`,
+    }, ({ new: row }) => {
       if (!tasks.value.find(t => t.id === row.id)) tasks.value.push(mapTask(row))
     })
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'tasks' }, ({ new: row }) => {
+    .on('postgres_changes', {
+      event: 'UPDATE', schema: 'public', table: 'tasks', filter: `workspace_id=eq.${currentWorkspaceId.value}`,
+    }, ({ new: row }) => {
       const idx = tasks.value.findIndex(t => t.id === row.id)
       if (idx !== -1) {
         tasks.value[idx] = mapTask(row)
         if (detailTask.value?.id === row.id) detailTask.value = mapTask(row)
       }
     })
-    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'tasks' }, ({ old: row }) => {
+    .on('postgres_changes', {
+      event: 'DELETE', schema: 'public', table: 'tasks', filter: `workspace_id=eq.${currentWorkspaceId.value}`,
+    }, ({ old: row }) => {
       tasks.value = tasks.value.filter(t => t.id !== row.id)
     })
     .subscribe((status, err) => {
@@ -367,7 +451,7 @@ function startRealtimeSync() {
     .channel('db-notifications')
     .on('postgres_changes', {
       event: 'INSERT', schema: 'public', table: 'notifications',
-      filter: `member_id=eq.${currentUser.value.id}`,
+      filter: `member_id=eq.${currentUser.value.id},workspace_id=eq.${currentWorkspaceId.value}`,
     }, ({ new: row }) => {
       if (!notifications.value.find(n => n.id === row.id)) {
         notifications.value.unshift(mapNotification(row))
@@ -376,7 +460,7 @@ function startRealtimeSync() {
     })
     .on('postgres_changes', {
       event: 'UPDATE', schema: 'public', table: 'notifications',
-      filter: `member_id=eq.${currentUser.value.id}`,
+      filter: `member_id=eq.${currentUser.value.id},workspace_id=eq.${currentWorkspaceId.value}`,
     }, ({ new: row }) => {
       const idx = notifications.value.findIndex(n => n.id === row.id)
       if (idx !== -1) notifications.value[idx] = mapNotification(row)
@@ -438,6 +522,8 @@ onMounted(() => {
   applyTheme(isDark.value)
   clock.value = new Date().toLocaleTimeString('en-US', { hour12: false })
   const saved = localStorage.getItem('squad_user')
+  const savedWorkspace = localStorage.getItem('squad_workspace')
+  if (savedWorkspace) currentWorkspaceId.value = savedWorkspace
   if (saved) {
     currentUser.value = JSON.parse(saved)
     startApp()
@@ -449,13 +535,75 @@ onUnmounted(() => stopApp())
 // ── actions ───────────────────────────────────────────────────────────────────
 function openModal(type) { modals[type] = true }
 
+async function selectWorkspace(workspaceId) {
+  if (!workspaceId || workspaceId === currentWorkspaceId.value) return
+  currentWorkspaceId.value = workspaceId
+  localStorage.setItem('squad_workspace', workspaceId)
+  await fetchWorkspaceData(workspaceId)
+  stopRealtimeSync()
+  startRealtimeSync()
+}
+
+function canAccessCurrentWorkspace() {
+  if (!currentUser.value || !currentWorkspaceId.value) return false
+  if (currentUser.value.access === 'admin') return true
+  const isOwner = workspaces.value.some(w => w.id === currentWorkspaceId.value && w.ownerId === currentUser.value.id)
+  if (isOwner) return true
+  return workspaceMembers.value.some(wm => wm.member_id === currentUser.value.id)
+}
+
+async function createWorkspace({ name, memberIds = [] }) {
+  if (!name?.trim() || !currentUser.value) return
+  const { data, error } = await supabase.from('workspaces').insert({
+    name: name.trim(),
+    owner_id: currentUser.value.id,
+  }).select().single()
+  if (error) { showToast('Error', 'Could not create workspace', 'red'); return }
+
+  const ids = [...new Set([currentUser.value.id, ...memberIds])]
+  await supabase.from('workspace_members').insert(ids.map(id => ({ workspace_id: data.id, member_id: id })))
+  workspaces.value.push(mapWorkspace(data))
+  modals.workspace = false
+  await selectWorkspace(data.id)
+  showToast('Workspace Created', data.name, 'blue')
+}
+
+async function updateWorkspace({ id, name }) {
+  const workspace = workspaces.value.find(w => w.id === id)
+  if (!workspace || !name?.trim()) return
+  if (currentUser.value.access !== 'admin' && workspace.ownerId !== currentUser.value.id) return
+  workspace.name = name.trim()
+  const { error } = await supabase.from('workspaces').update({ name: workspace.name }).eq('id', id)
+  if (error) showToast('Error', 'Could not rename workspace', 'red')
+  else showToast('Workspace Updated', workspace.name, 'blue')
+}
+
+async function addWorkspaceMember({ workspaceId, memberId }) {
+  const workspace = workspaces.value.find(w => w.id === workspaceId)
+  if (!workspace) return
+  if (currentUser.value.access !== 'admin' && workspace.ownerId !== currentUser.value.id) return
+  const { error } = await supabase.from('workspace_members').insert({ workspace_id: workspaceId, member_id: memberId })
+  if (error) return
+  if (workspaceId === currentWorkspaceId.value) await fetchWorkspaceData(workspaceId)
+}
+
+async function removeWorkspaceMember({ workspaceId, memberId }) {
+  const workspace = workspaces.value.find(w => w.id === workspaceId)
+  if (!workspace) return
+  if (currentUser.value.access !== 'admin' && workspace.ownerId !== currentUser.value.id) return
+  await supabase.from('workspace_members').delete().eq('workspace_id', workspaceId).eq('member_id', memberId)
+  if (workspaceId === currentWorkspaceId.value) await fetchWorkspaceData(workspaceId)
+}
+
 function openDetail(task) {
   detailTask.value = task
   modals.detail = true
 }
 
 async function logActivity(action, entityType, entityId, message) {
+  if (!currentWorkspaceId.value) return
   await supabase.from('activity_logs').insert({
+    workspace_id: currentWorkspaceId.value,
     actor_id:    currentUser.value?.id ?? null,
     action,
     entity_type: entityType,
@@ -465,6 +613,7 @@ async function logActivity(action, entityType, entityId, message) {
 }
 
 async function addTask() {
+  if (!canAccessCurrentWorkspace()) return
   if (!form.title.trim())  { triggerShake('taskTitle');    return }
   if (!form.assigneeId)    { triggerShake('taskAssignee'); return }
 
@@ -473,6 +622,7 @@ async function addTask() {
   const confirmed = !isCrossAssignment
 
   const { data, error } = await supabase.from('tasks').insert({
+    workspace_id: currentWorkspaceId.value,
     title:       form.title.trim(),
     description: form.desc.trim(),
     assignee_id: form.assigneeId,
@@ -490,6 +640,7 @@ async function addTask() {
 
   if (form.reminderDt) {
     const { data: rData, error: rErr } = await supabase.from('reminders').insert({
+      workspace_id: currentWorkspaceId.value,
       title:       `Task: ${task.title}`,
       task_id:     task.id,
       datetime:    form.reminderDt,
@@ -501,6 +652,7 @@ async function addTask() {
 
   if (isCrossAssignment) {
     await supabase.from('notifications').insert({
+      workspace_id: currentWorkspaceId.value,
       member_id: form.assigneeId,
       sender_id: currentUser.value.id,
       type:      'task_assignment_request',
@@ -511,6 +663,7 @@ async function addTask() {
   } else {
     if (form.assigneeId !== currentUser.value.id) {
       await supabase.from('notifications').insert({
+        workspace_id: currentWorkspaceId.value,
         member_id: form.assigneeId,
         sender_id: currentUser.value.id,
         type:      'task_assigned',
@@ -537,6 +690,7 @@ async function addTask() {
 }
 
 async function editTask({ id, title, desc, priority, due, status }) {
+  if (!canAccessCurrentWorkspace()) return
   const t = tasks.value.find(t => t.id === id)
   if (!t) return
   if (currentUser.value.access !== 'admin' && t.assigneeId !== currentUser.value.id) {
@@ -567,6 +721,7 @@ async function onCommentAdded({ taskId, taskTitle }) {
 }
 
 async function toggleDone(id) {
+  if (!canAccessCurrentWorkspace()) return
   const t = tasks.value.find(t => t.id === id)
   if (!t) return
 
@@ -581,6 +736,7 @@ async function toggleDone(id) {
     // User requesting to reopen another user's task → send approval request
     const assignee = members.value.find(m => m.id === t.assigneeId)
     await supabase.from('notifications').insert({
+      workspace_id: currentWorkspaceId.value,
       member_id: t.assigneeId,
       sender_id: currentUser.value.id,
       type:      'task_reopen_request',
@@ -610,6 +766,7 @@ async function toggleDone(id) {
     if (isAdmin && t.assigneeId && t.assigneeId !== currentUser.value.id) {
       const action = newDone ? 'marked your task as done' : 'reopened your task'
       await supabase.from('notifications').insert({
+        workspace_id: currentWorkspaceId.value,
         member_id: t.assigneeId,
         sender_id: currentUser.value.id,
         type:      newDone ? 'task_marked_done' : 'task_reopened',
@@ -621,6 +778,7 @@ async function toggleDone(id) {
 }
 
 async function deleteTask(id) {
+  if (!canAccessCurrentWorkspace()) return
   const t = tasks.value.find(t => t.id === id)
   tasks.value     = tasks.value.filter(t => t.id !== id)
   reminders.value = reminders.value.filter(r => r.taskId !== id)
@@ -631,9 +789,11 @@ async function deleteTask(id) {
 }
 
 async function addReminder() {
+  if (!canAccessCurrentWorkspace()) return
   if (!remForm.title.trim() || !remForm.datetime) return
 
   const { data, error } = await supabase.from('reminders').insert({
+    workspace_id: currentWorkspaceId.value,
     title:       remForm.title.trim(),
     task_id:     remForm.taskId || null,
     datetime:    remForm.datetime,
@@ -652,6 +812,7 @@ async function addReminder() {
 }
 
 async function deleteReminder(id) {
+  if (!canAccessCurrentWorkspace()) return
   reminders.value = reminders.value.filter(r => r.id !== id)
   const { error } = await supabase.from('reminders').delete().eq('id', id)
   if (error) showToast('Error', 'Could not delete reminder', 'red')
@@ -757,6 +918,7 @@ async function reorderColumn(status, direction) {
 }
 
 async function onDrop(status) {
+  if (!canAccessCurrentWorkspace()) return
   if (!dragTaskId.value) return
   const t = tasks.value.find(t => t.id === dragTaskId.value)
   if (!t) return
@@ -808,6 +970,7 @@ async function acceptAssignment(notif) {
   if (notif.senderId) {
     const assigneeName = currentUser.value.name
     await supabase.from('notifications').insert({
+      workspace_id: currentWorkspaceId.value,
       member_id: notif.senderId,
       sender_id: currentUser.value.id,
       type:      'task_confirmed',
@@ -831,6 +994,7 @@ async function declineAssignment(notif) {
 
   if (notif.senderId) {
     await supabase.from('notifications').insert({
+      workspace_id: currentWorkspaceId.value,
       member_id: notif.senderId,
       sender_id: currentUser.value.id,
       type:      'task_declined',
@@ -858,6 +1022,7 @@ async function acceptReopenRequest(notif) {
   await supabase.from('notifications').delete().eq('id', notif.id)
   if (notif.senderId) {
     await supabase.from('notifications').insert({
+      workspace_id: currentWorkspaceId.value,
       member_id: notif.senderId,
       sender_id: currentUser.value.id,
       type:      'task_reopen_accepted',
@@ -876,6 +1041,7 @@ async function declineReopenRequest(notif) {
   await supabase.from('notifications').delete().eq('id', notif.id)
   if (notif.senderId) {
     await supabase.from('notifications').insert({
+      workspace_id: currentWorkspaceId.value,
       member_id: notif.senderId,
       sender_id: currentUser.value.id,
       type:      'task_reopen_declined',

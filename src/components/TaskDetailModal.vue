@@ -181,6 +181,7 @@ const props = defineProps({
   members:     Array,
   columns:     Array,
   currentUser: Object,
+  workspaceId: String,
 })
 const emit = defineEmits(['close', 'toggle-done', 'delete-task', 'edit-task', 'comment-added'])
 
@@ -238,6 +239,7 @@ async function fetchComments() {
   const { data } = await supabase
     .from('task_comments')
     .select('*')
+    .eq('workspace_id', props.workspaceId)
     .eq('task_id', props.task.id)
     .order('created_at')
   comments.value = data ?? []
@@ -248,6 +250,7 @@ async function submitComment() {
   const content = commentInput.value.trim()
   if (!content) return
   const { data, error } = await supabase.from('task_comments').insert({
+    workspace_id: props.workspaceId,
     task_id:   props.task.id,
     member_id: props.currentUser?.id ?? null,
     content,

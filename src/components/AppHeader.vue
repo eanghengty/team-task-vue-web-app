@@ -8,6 +8,18 @@
     <div class="flex items-center gap-3">
       <div class="font-mono text-sm" style="color:var(--muted)">{{ clock }}</div>
       <div class="w-px h-5" style="background:var(--border)"></div>
+      <select
+        class="field text-xs"
+        style="width:220px;padding:6px 10px"
+        :value="currentWorkspaceId"
+        @change="$emit('select-workspace', $event.target.value)"
+      >
+        <option v-for="w in workspaces" :key="w.id" :value="w.id">{{ w.name }}</option>
+      </select>
+      <button @click="$emit('open-workspace-modal')" class="btn-ghost flex items-center gap-1.5" title="Create Workspace">
+        <span class="material-icons" style="font-size:16px">workspaces</span>
+        Workspace
+      </button>
       <button @click="$emit('open-modal', 'add')" class="btn-primary flex items-center gap-2">
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         New Task
@@ -52,8 +64,21 @@
 </template>
 
 <script setup>
-defineProps({ clock: String, currentUser: Object, unreadCount: Number })
-defineEmits(['open-modal', 'open-settings', 'open-notifications', 'logout'])
+defineProps({
+  clock: String,
+  currentUser: Object,
+  unreadCount: Number,
+  workspaces: Array,
+  currentWorkspaceId: String,
+})
+defineEmits([
+  'open-modal',
+  'open-settings',
+  'open-notifications',
+  'logout',
+  'select-workspace',
+  'open-workspace-modal',
+])
 
 function initials(name) {
   return (name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()

@@ -58,8 +58,9 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../lib/supabase.js'
+const props = defineProps({ workspaceId: String })
 
 const PAGE_SIZE = 20
 
@@ -71,15 +72,21 @@ const loading = ref(false)
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)))
 
 async function fetchPage(p) {
+  if (!props.workspaceId) {
+    logs.value = []
+    total.value = 0
+    return
+  }
   loading.value = true
   page.value = p
   const from = (p - 1) * PAGE_SIZE
   const to   = from + PAGE_SIZE - 1
 
   const [countRes, dataRes] = await Promise.all([
-    supabase.from('activity_logs').select('id', { count: 'exact', head: true }),
+    supabase.from('activity_logs').select('id', { count: 'exact', head: true }).eq('workspace_id', props.workspaceId),
     supabase.from('activity_logs')
       .select('*, actor:actor_id(id, name, color)')
+      .eq('workspace_id', props.workspaceId)
       .order('created_at', { ascending: false })
       .range(from, to),
   ])
@@ -99,4 +106,5 @@ function initials(name) {
 }
 
 onMounted(() => fetchPage(1))
+watch(() => props.workspaceId, () => fetchPage(1))
 </script>
